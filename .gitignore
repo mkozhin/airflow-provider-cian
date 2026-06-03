@@ -1,0 +1,21 @@
+.idea
+.venv
+uv.lock
+.ipynb_checkpoints
+__pycache__
+**/.env
+.env
+/CLAUDE.md
+/PLAN.md
+examples/
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Generated version file (setuptools-scm)
+/.claude/
+/docs/plans/
+/docs/adr/
