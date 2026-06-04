@@ -9,7 +9,7 @@ def test_provider_info_keys():
 
 def test_provider_info_values():
     info = get_provider_info()
-    assert info["package-name"] == "apache-airflow-provider-cian"
+    assert info["package-name"] == "airflow-provider-cian"
     assert info["name"] == "Cian"
     assert isinstance(info["versions"], list)
     assert len(info["versions"]) > 0

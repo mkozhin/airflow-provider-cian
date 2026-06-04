@@ -1,11 +1,11 @@
-# apache-airflow-provider-cian
+# airflow-provider-cian
 
 Airflow provider for Cian.ru Builder API — collect calls and chats statistics.
 
 ## Installation
 
 ```bash
-pip install apache-airflow-provider-cian
+pip install airflow-provider-cian
 ```
 
 Requirements: Python 3.10+, Apache Airflow 2.9.1–2.x.

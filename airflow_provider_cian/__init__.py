@@ -3,7 +3,7 @@ from airflow_provider_cian._version import __version__
 
 def get_provider_info() -> dict:
     return {
-        "package-name": "apache-airflow-provider-cian",
+        "package-name": "airflow-provider-cian",
         "name": "Cian",
         "description": "Airflow provider for Cian.ru Builder API",
         "versions": [__version__],

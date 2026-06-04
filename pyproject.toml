@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "apache-airflow-provider-cian"
+name = "airflow-provider-cian"
 dynamic = ["version"]
 description = "Apache Airflow provider for Cian.ru Builder API — collect calls and chats statistics"
 readme = "README.md"
