@@ -7,7 +7,6 @@ __pycache__
 .env
 /CLAUDE.md
 /PLAN.md
-examples/
 .DS_Store
 
 # Build artifacts
@@ -16,6 +15,7 @@ build/
 *.egg-info/
 
 # Generated version file (setuptools-scm)
+airflow_provider_cian/_version.py
 /.claude/
 /docs/plans/
 /docs/adr/
