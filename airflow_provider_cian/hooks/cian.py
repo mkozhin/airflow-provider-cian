@@ -25,7 +25,7 @@ class CianHook(BaseHook):
     def get_newbuilding_name(self, newbuilding_id: int) -> str:
         try:
             data = self._make_request("/v1/get-newbuilding/", {"newbuildingId": newbuilding_id})
-            return data["result"]["newbuilding"]["displayName"]
+            return data["result"]["newbuilding"]["name"]
         except AirflowException:
             raise
         except Exception as e:

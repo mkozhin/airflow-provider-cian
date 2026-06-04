@@ -33,6 +33,7 @@ def _sample_records() -> list[dict]:
             "date": "2024-01-15",
             "actionType": "call",
             "searcherPhone": "+79001112233",
+            "searcherCtPhone": "+74951112233",
             "builderUserCtPhone": "+79001112234",
             "builderUserPhone": "+79001112235",
             "builderSipUri": "sip:100@example.com",
@@ -49,6 +50,7 @@ def _sample_records() -> list[dict]:
             "date": "2024-01-15",
             "actionType": "call",
             "searcherPhone": "+79009998877",
+            "searcherCtPhone": None,
             "builderUserCtPhone": None,
             "builderUserPhone": "+79001112235",
             "builderSipUri": None,
@@ -143,10 +145,11 @@ class TestWrite:
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
         records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "builder_user_ct_phone",
-                                       "builder_user_phone", "builder_sip_uri", "call_duration",
-                                       "tariff_price", "auction_bet", "cashback_spent",
-                                       "billing_price", "has_claim", "is_targeted"]}]
+                                       "action_type", "searcher_phone", "searcher_ct_phone",
+                                       "builder_user_ct_phone", "builder_user_phone",
+                                       "builder_sip_uri", "call_duration", "tariff_price",
+                                       "auction_bet", "cashback_spent", "billing_price",
+                                       "has_claim", "is_targeted"]}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 
@@ -160,10 +163,11 @@ class TestWrite:
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
         records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "builder_user_ct_phone",
-                                       "builder_user_phone", "builder_sip_uri", "call_duration",
-                                       "tariff_price", "auction_bet", "cashback_spent",
-                                       "billing_price", "has_claim", "is_targeted"]}]
+                                       "action_type", "searcher_phone", "searcher_ct_phone",
+                                       "builder_user_ct_phone", "builder_user_phone",
+                                       "builder_sip_uri", "call_duration", "tariff_price",
+                                       "auction_bet", "cashback_spent", "billing_price",
+                                       "has_claim", "is_targeted"]}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 

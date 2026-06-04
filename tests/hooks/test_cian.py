@@ -108,7 +108,7 @@ class TestGetNewbuildingName:
     def test_success_returns_name(self):
         hook = _make_hook()
         response = _mock_response(
-            200, {"result": {"newbuilding": {"displayName": "ЖК Тестовый"}}}
+            200, {"result": {"newbuilding": {"name": "ЖК Тестовый"}}}
         )
 
         with patch("requests.get", return_value=response):
