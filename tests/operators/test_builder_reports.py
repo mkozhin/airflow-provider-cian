@@ -30,7 +30,7 @@ def _sample_records() -> list[dict]:
         {
             "id": 1,
             "newbuildingId": 10,
-            "date": "2024-01-15",
+            "date": "2024-01-15T10:43:22",
             "actionType": "call",
             "searcherPhone": "+79001112233",
             "searcherCtPhone": "+74951112233",
@@ -47,7 +47,7 @@ def _sample_records() -> list[dict]:
         {
             "id": 2,
             "newbuildingId": 10,
-            "date": "2024-01-15",
+            "date": "2024-01-15T22:00:00",
             "actionType": "call",
             "searcherPhone": "+79009998877",
             "searcherCtPhone": None,
@@ -128,6 +128,38 @@ class TestEnrich:
         enriched = op._enrich(records, hook)
         assert enriched[0]["newbuilding_name"] == "ЖК Речной"
 
+    def test_datetime_without_timezone_gets_msk_offset(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_with_existing_offset_unchanged(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22+03:00"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_midnight_boundary_correct_date(self, tmp_path):
+        # 00:30 MSK — should be 2026-06-03, not 2026-06-02
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T00:30:00"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_none_when_date_missing(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["date"] is None
+        assert enriched[0]["datetime"] is None
+
 
 class TestWrite:
     def test_json_creates_jsonl_file(self, tmp_path):
@@ -145,11 +177,11 @@ class TestWrite:
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
         records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "searcher_ct_phone",
-                                       "builder_user_ct_phone", "builder_user_phone",
-                                       "builder_sip_uri", "call_duration", "tariff_price",
-                                       "auction_bet", "cashback_spent", "billing_price",
-                                       "has_claim", "is_targeted"]}]
+                                       "datetime", "action_type", "searcher_phone",
+                                       "searcher_ct_phone", "builder_user_ct_phone",
+                                       "builder_user_phone", "builder_sip_uri", "call_duration",
+                                       "tariff_price", "auction_bet", "cashback_spent",
+                                       "billing_price", "has_claim", "is_targeted"]}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 
@@ -163,11 +195,11 @@ class TestWrite:
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
         records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "searcher_ct_phone",
-                                       "builder_user_ct_phone", "builder_user_phone",
-                                       "builder_sip_uri", "call_duration", "tariff_price",
-                                       "auction_bet", "cashback_spent", "billing_price",
-                                       "has_claim", "is_targeted"]}]
+                                       "datetime", "action_type", "searcher_phone",
+                                       "searcher_ct_phone", "builder_user_ct_phone",
+                                       "builder_user_phone", "builder_sip_uri", "call_duration",
+                                       "tariff_price", "auction_bet", "cashback_spent",
+                                       "billing_price", "has_claim", "is_targeted"]}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 
