@@ -1,5 +1,11 @@
 # airflow-provider-cian
 
+---
+
+*Powered by [Claude Code](https://claude.ai/code)*
+
+---
+
 Airflow provider for Cian.ru Builder API — collect calls and chats statistics.
 
 ## Installation
@@ -38,11 +44,12 @@ The operator returns the output file path via `return_value` XCom.
 
 Output file path: `{base_dir}/{safe_run_id}/{date}.{ext}`
 
-### Output Schema (16 fields)
+### Output Schema (17 fields)
 
 `id`, `newbuilding_id`, `newbuilding_name`, `date`, `action_type`, `searcher_phone`,
-`builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`, `call_duration`,
-`tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`, `has_claim`, `is_targeted`
+`searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
+`call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
+`has_claim`, `is_targeted`
 
 `is_targeted` is computed: `billing_price > 0`.
 
