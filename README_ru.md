@@ -44,14 +44,16 @@ pip install airflow-provider-cian
 
 Путь к файлу: `{base_dir}/{safe_run_id}/{date}.{ext}`
 
-### Схема данных (17 полей)
+### Схема данных (18 полей)
 
-`id`, `newbuilding_id`, `newbuilding_name`, `date`, `action_type`, `searcher_phone`,
+`id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
 `searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
 `call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
 `has_claim`, `is_targeted`
 
-`is_targeted` вычисляется: `billing_price > 0`.
+- `date` — дата в московском времени (`YYYY-MM-DD`), удобна для партиционирования
+- `datetime` — исходное datetime из API с явным московским смещением (`YYYY-MM-DDTHH:MM:SS+03:00`)
+- `is_targeted` вычисляется: `billing_price > 0`.
 
 ## Пример DAG
 

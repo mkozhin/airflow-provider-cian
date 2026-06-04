@@ -44,14 +44,16 @@ The operator returns the output file path via `return_value` XCom.
 
 Output file path: `{base_dir}/{safe_run_id}/{date}.{ext}`
 
-### Output Schema (17 fields)
+### Output Schema (18 fields)
 
-`id`, `newbuilding_id`, `newbuilding_name`, `date`, `action_type`, `searcher_phone`,
+`id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
 `searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
 `call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
 `has_claim`, `is_targeted`
 
-`is_targeted` is computed: `billing_price > 0`.
+- `date` — date extracted in Moscow time (`YYYY-MM-DD`), useful for partitioning
+- `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`)
+- `is_targeted` is computed: `billing_price > 0`.
 
 ## Example DAG
 

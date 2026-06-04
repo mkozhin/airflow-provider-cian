@@ -81,16 +81,16 @@ else:
 - Modify: `README_ru.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] обновить раздел "Output Schema" в `README.md`: 17 → 18 полей, добавить `datetime`, описание
-- [ ] то же самое в `README_ru.md`
-- [ ] добавить запись в `CHANGELOG.md` для версии `0.1.2`
-- [ ] переместить план: `docs/plans/completed/`
+- [x] обновить раздел "Output Schema" в `README.md`: 17 → 18 полей, добавить `datetime`, описание
+- [x] то же самое в `README_ru.md`
+- [x] добавить запись в `CHANGELOG.md` для версии `0.1.2`
+- [x] переместить план: `docs/plans/completed/`
 
 ### Task 3: Финальная проверка
 
-- [ ] запустить полный тест-сьют: `pytest tests/ -v`
-- [ ] убедиться что `_CSV_FIELDS` и `_enrich()` возвращают одинаковые 18 полей
-- [ ] убедиться что JSON и CSV форматы содержат оба поля в правильном порядке
+- [x] запустить полный тест-сьют: `pytest tests/ -v`
+- [x] убедиться что `_CSV_FIELDS` и `_enrich()` возвращают одинаковые 18 полей
+- [x] убедиться что JSON и CSV форматы содержат оба поля в правильном порядке
 
 ## Post-Completion
 

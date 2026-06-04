@@ -4,7 +4,7 @@ import csv
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.models import BaseOperator
 
@@ -87,9 +87,11 @@ class CianBuilderReportsOperator(BaseOperator):
 
             raw_dt = record.get("date")
             if raw_dt:
-                dt = datetime.fromisoformat(raw_dt)
+                dt = _datetime.fromisoformat(raw_dt.replace("Z", "+00:00"))
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=_MSK)
+                else:
+                    dt = dt.astimezone(_MSK)
                 dt_str = dt.isoformat()
                 date_str = dt.date().isoformat()
             else:
