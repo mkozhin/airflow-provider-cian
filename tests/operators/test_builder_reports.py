@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator
+from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS
 
 
 def _make_operator(tmp_dir: str, output_format: str = "json") -> CianBuilderReportsOperator:
@@ -30,7 +30,7 @@ def _sample_records() -> list[dict]:
         {
             "id": 1,
             "newbuildingId": 10,
-            "date": "2024-01-15",
+            "date": "2024-01-15T10:43:22",
             "actionType": "call",
             "searcherPhone": "+79001112233",
             "searcherCtPhone": "+74951112233",
@@ -47,7 +47,7 @@ def _sample_records() -> list[dict]:
         {
             "id": 2,
             "newbuildingId": 10,
-            "date": "2024-01-15",
+            "date": "2024-01-15T22:00:00",
             "actionType": "call",
             "searcherPhone": "+79009998877",
             "searcherCtPhone": None,
@@ -128,6 +128,55 @@ class TestEnrich:
         enriched = op._enrich(records, hook)
         assert enriched[0]["newbuilding_name"] == "ЖК Речной"
 
+    def test_datetime_without_timezone_gets_msk_offset(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_with_existing_msk_offset_unchanged(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22+03:00"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_with_non_msk_offset_converted_to_msk(self, tmp_path):
+        # UTC +00:00 → converted to MSK +03:00; date must be Moscow date
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T00:30:00+00:00"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T03:30:00+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_midnight_boundary_utc_vs_msk(self, tmp_path):
+        # 2026-06-02T23:30:00+00:00 = 2026-06-03T02:30:00+03:00 → date must be 2026-06-03 (MSK)
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-02T23:30:00+00:00"}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["datetime"] == "2026-06-03T02:30:00+03:00"
+        assert enriched[0]["date"] == "2026-06-03"
+
+    def test_datetime_none_when_date_missing(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert enriched[0]["date"] is None
+        assert enriched[0]["datetime"] is None
+
+    def test_enriched_record_has_exactly_csv_fields(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
+        hook = _make_hook_mock(records)
+        enriched = op._enrich(records, hook)
+        assert set(enriched[0].keys()) == set(_CSV_FIELDS)
+
 
 class TestWrite:
     def test_json_creates_jsonl_file(self, tmp_path):
@@ -144,12 +193,7 @@ class TestWrite:
     def test_csv_creates_file_with_header(self, tmp_path):
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
-        records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "searcher_ct_phone",
-                                       "builder_user_ct_phone", "builder_user_phone",
-                                       "builder_sip_uri", "call_duration", "tariff_price",
-                                       "auction_bet", "cashback_spent", "billing_price",
-                                       "has_claim", "is_targeted"]}]
+        records = [{f: None for f in _CSV_FIELDS}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 
@@ -158,20 +202,18 @@ class TestWrite:
             rows = list(reader)
         assert len(rows) == 1
         assert "searcher_phone" in rows[0]
+        assert "datetime" in rows[0]
+        assert len(rows[0]) == 18
 
     def test_csv_phones_quoted(self, tmp_path):
         op = _make_operator(str(tmp_path), "csv")
         path = str(tmp_path / "out.csv")
-        records = [{f: None for f in ["id", "newbuilding_id", "newbuilding_name", "date",
-                                       "action_type", "searcher_phone", "searcher_ct_phone",
-                                       "builder_user_ct_phone", "builder_user_phone",
-                                       "builder_sip_uri", "call_duration", "tariff_price",
-                                       "auction_bet", "cashback_spent", "billing_price",
-                                       "has_claim", "is_targeted"]}]
+        records = [{f: None for f in _CSV_FIELDS}]
         records[0]["searcher_phone"] = "+79001112233"
         op._write(records, path)
 
-        content = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
         assert '"+79001112233"' in content
 
     def test_empty_records_json_creates_empty_file(self, tmp_path):
@@ -238,6 +280,17 @@ class TestExecute:
         path1, _ = self._run_operator(tmp_path, run_id="run-aaa")
         path2, _ = self._run_operator(tmp_path, run_id="run-bbb")
         assert os.path.dirname(path1) != os.path.dirname(path2)
+
+    def test_json_enriched_content(self, tmp_path):
+        path, _ = self._run_operator(tmp_path)
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert len(records) == 2
+        first = records[0]
+        assert first["datetime"] == "2024-01-15T10:43:22+03:00"
+        assert first["date"] == "2024-01-15"
+        assert first["newbuilding_name"] == "ЖК Тест"
+        assert first["is_targeted"] is True
 
     def test_custom_base_dir(self, tmp_path):
         custom_dir = str(tmp_path / "custom")

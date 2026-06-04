@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.2] - 2026-06-04
+
+- Feat: split `date` field into `date` (Moscow date, `YYYY-MM-DD`) and `datetime` (ISO with `+03:00` offset) — schema grows from 17 to 18 fields
+- Fix: API datetime without timezone now gets explicit Moscow offset (`+03:00`) instead of being treated as naive
+
 ## [0.1.1] - 2026-06-04
 
 - Fix: rename package to `airflow-provider-cian` (was `apache-airflow-provider-cian`)

@@ -4,11 +4,13 @@ import csv
 import json
 import os
 import re
+from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.models import BaseOperator
 
 from airflow_provider_cian.hooks.cian import CianHook
 
+_MSK = timezone(timedelta(hours=3))
 _OUTPUT_FORMATS = ("json", "csv")
 
 _CSV_FIELDS = [
@@ -16,6 +18,7 @@ _CSV_FIELDS = [
     "newbuilding_id",
     "newbuilding_name",
     "date",
+    "datetime",
     "action_type",
     "searcher_phone",
     "searcher_ct_phone",
@@ -81,12 +84,27 @@ class CianBuilderReportsOperator(BaseOperator):
         for record in records:
             nid = record.get("newbuildingId")
             billing_price = record.get("billingPrice", 0) or 0
+
+            raw_dt = record.get("date")
+            if raw_dt:
+                dt = _datetime.fromisoformat(raw_dt.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_MSK)
+                else:
+                    dt = dt.astimezone(_MSK)
+                dt_str = dt.isoformat()
+                date_str = dt.date().isoformat()
+            else:
+                dt_str = None
+                date_str = None
+
             result.append(
                 {
                     "id": record.get("id"),
                     "newbuilding_id": nid,
                     "newbuilding_name": name_cache.get(nid, ""),
-                    "date": record.get("date"),
+                    "date": date_str,
+                    "datetime": dt_str,
                     "action_type": record.get("actionType"),
                     "searcher_phone": record.get("searcherPhone"),
                     "searcher_ct_phone": record.get("searcherCtPhone"),
