@@ -6,7 +6,7 @@ import pytest
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 
-from airflow_provider_cian.hooks.cian import CianHook
+from airflow_provider_cian.hooks.cian import CianHook, CianNotFoundError
 
 
 def _make_hook() -> CianHook:
@@ -132,6 +132,35 @@ class TestGetNewbuildingName:
         with patch("requests.get", return_value=response):
             with pytest.raises(AirflowException, match="newbuilding"):
                 hook.get_newbuilding_name(42)
+
+    def test_not_found_400_returns_неизвестно(self):
+        hook = _make_hook()
+        fail_response = _mock_response(400)
+
+        with patch("requests.get", return_value=fail_response):
+            with patch("time.sleep"):
+                name = hook.get_newbuilding_name(99)
+
+        assert name == "Неизвестно"
+
+    def test_5xx_still_raises_after_not_found_fix(self):
+        hook = _make_hook()
+        fail_response = _mock_response(500)
+
+        with patch("requests.get", return_value=fail_response):
+            with patch("time.sleep"):
+                with pytest.raises(AirflowException):
+                    hook.get_newbuilding_name(42)
+
+    def test_http_error_404_still_raises_airflow_exception(self):
+        """404 is not in not_found_codes=(400,), so it must raise AirflowException, not CianNotFoundError."""
+        hook = _make_hook()
+        fail_response = _mock_response(404)
+
+        with patch("requests.get", return_value=fail_response):
+            with patch("time.sleep"):
+                with pytest.raises(AirflowException):
+                    hook.get_newbuilding_name(42)
 
 
 class TestTestConnection:

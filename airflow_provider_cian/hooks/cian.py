@@ -8,6 +8,10 @@ from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 
 
+class CianNotFoundError(AirflowException):
+    """Raised when the Cian API responds with a 'not found' status code."""
+
+
 class CianHook(BaseHook):
     conn_name_attr = "cian_conn_id"
     default_conn_name = "cian_default"
@@ -24,10 +28,15 @@ class CianHook(BaseHook):
 
     def get_newbuilding_name(self, newbuilding_id: int) -> str:
         try:
-            data = self._make_request("/v1/get-newbuilding/", {"newbuildingId": newbuilding_id})
+            data = self._make_request(
+                "/v1/get-newbuilding/",
+                {"newbuildingId": newbuilding_id},
+                not_found_codes=(400,),
+            )
             return data["result"]["newbuilding"]["name"]
-        except AirflowException:
-            raise
+        except CianNotFoundError:
+            self.log.warning("Newbuilding id=%s not found (400), returning 'Неизвестно'", newbuilding_id)
+            return "Неизвестно"
         except Exception as e:
             raise AirflowException(f"Failed to get newbuilding name for id={newbuilding_id}: {e}") from e
 
@@ -38,7 +47,7 @@ class CianHook(BaseHook):
         except Exception as e:
             return False, str(e)
 
-    def _make_request(self, path: str, params: dict) -> dict:
+    def _make_request(self, path: str, params: dict, not_found_codes: tuple[int, ...] = ()) -> dict:
         conn = self.get_connection(self.cian_conn_id)
         base_url = conn.host.rstrip("/")
         token = conn.password
@@ -58,6 +67,11 @@ class CianHook(BaseHook):
 
             if resp.status_code == 200:
                 return resp.json()
+
+            if not_found_codes and resp.status_code in not_found_codes:
+                raise CianNotFoundError(
+                    f"Cian API returned {resp.status_code} (not found) for {url}"
+                )
 
             if resp.status_code in (429, 500, 502, 503, 504):
                 last_exc = AirflowException(
