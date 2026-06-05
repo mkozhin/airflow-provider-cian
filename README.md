@@ -51,7 +51,7 @@ Output file path: `{base_dir}/{safe_run_id}/{date}.{ext}`
 `call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
 `has_claim`, `is_targeted`
 
-- `date` — date extracted in Moscow time (`YYYY-MM-DD`), useful for partitioning
+- `date` — collection date (`YYYY-MM-DD`), always equals the operator's `date` parameter; safe for BigQuery date partitioning
 - `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` is computed: `billing_price > 0`.
 
@@ -103,6 +103,14 @@ airflow pools set cian_api 5 "Cian API rate limit pool"
 ```
 
 Then pass `pool="cian_api"` to `CianBuilderReportsOperator.partial(...)`.
+
+## Error Handling
+
+`CianNotFoundError` (subclass of `AirflowException`) is raised when the API returns a "not found" response for a resource. `get_newbuilding_name` catches it internally and returns `"Неизвестно"` — DAG authors don't need to handle it for that method. For custom hook usage:
+
+```python
+from airflow_provider_cian.hooks import CianNotFoundError
+```
 
 ## Retry Behaviour
 

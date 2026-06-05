@@ -6,7 +6,7 @@ import pytest
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 
-from airflow_provider_cian.hooks.cian import CianHook
+from airflow_provider_cian.hooks.cian import CianHook, CianNotFoundError
 
 
 def _make_hook() -> CianHook:
@@ -133,6 +133,27 @@ class TestGetNewbuildingName:
             with pytest.raises(AirflowException, match="newbuilding"):
                 hook.get_newbuilding_name(42)
 
+    def test_not_found_400_returns_неизвестно(self):
+        hook = _make_hook()
+        fail_response = _mock_response(400)
+
+        with patch("requests.get", return_value=fail_response):
+            with patch("time.sleep"):
+                with patch("logging.Logger.warning") as mock_warning:
+                    name = hook.get_newbuilding_name(99)
+
+        assert name == "Неизвестно"
+        mock_warning.assert_called_once()
+
+    def test_5xx_still_raises_after_not_found_fix(self):
+        hook = _make_hook()
+        fail_response = _mock_response(500)
+
+        with patch("requests.get", return_value=fail_response):
+            with patch("time.sleep"):
+                with pytest.raises(AirflowException):
+                    hook.get_newbuilding_name(42)
+
 
 class TestTestConnection:
     def test_success(self):
@@ -155,3 +176,8 @@ class TestTestConnection:
 
         assert ok is False
         assert "401" in msg
+
+
+class TestCianNotFoundError:
+    def test_is_subclass_of_airflow_exception(self):
+        assert issubclass(CianNotFoundError, AirflowException)
