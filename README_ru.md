@@ -51,7 +51,7 @@ pip install airflow-provider-cian
 `call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
 `has_claim`, `is_targeted`
 
-- `date` — дата в московском времени (`YYYY-MM-DD`), удобна для партиционирования
+- `date` — дата сбора (`YYYY-MM-DD`), всегда равна параметру `date` оператора; безопасна для партиционирования BigQuery по дате
 - `datetime` — исходное datetime из API с явным московским смещением (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` вычисляется: `billing_price > 0`.
 

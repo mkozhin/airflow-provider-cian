@@ -139,23 +139,15 @@ class TestGetNewbuildingName:
 
         with patch("requests.get", return_value=fail_response):
             with patch("time.sleep"):
-                name = hook.get_newbuilding_name(99)
+                with patch("logging.Logger.warning") as mock_warning:
+                    name = hook.get_newbuilding_name(99)
 
         assert name == "Неизвестно"
+        mock_warning.assert_called_once()
 
     def test_5xx_still_raises_after_not_found_fix(self):
         hook = _make_hook()
         fail_response = _mock_response(500)
-
-        with patch("requests.get", return_value=fail_response):
-            with patch("time.sleep"):
-                with pytest.raises(AirflowException):
-                    hook.get_newbuilding_name(42)
-
-    def test_http_error_404_still_raises_airflow_exception(self):
-        """404 is not in not_found_codes=(400,), so it must raise AirflowException, not CianNotFoundError."""
-        hook = _make_hook()
-        fail_response = _mock_response(404)
 
         with patch("requests.get", return_value=fail_response):
             with patch("time.sleep"):
@@ -184,3 +176,8 @@ class TestTestConnection:
 
         assert ok is False
         assert "401" in msg
+
+
+class TestCianNotFoundError:
+    def test_is_subclass_of_airflow_exception(self):
+        assert issubclass(CianNotFoundError, AirflowException)

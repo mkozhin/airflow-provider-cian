@@ -35,8 +35,10 @@ class CianHook(BaseHook):
             )
             return data["result"]["newbuilding"]["name"]
         except CianNotFoundError:
-            self.log.warning("Newbuilding id=%s not found (400), returning 'Неизвестно'", newbuilding_id)
+            self.log.warning("Newbuilding id=%s not found (400), using fallback name", newbuilding_id)
             return "Неизвестно"
+        except AirflowException:
+            raise
         except Exception as e:
             raise AirflowException(f"Failed to get newbuilding name for id={newbuilding_id}: {e}") from e
 
@@ -68,7 +70,8 @@ class CianHook(BaseHook):
             if resp.status_code == 200:
                 return resp.json()
 
-            if not_found_codes and resp.status_code in not_found_codes:
+            # not_found_codes bypass retry — these are non-transient errors
+            if resp.status_code in not_found_codes:
                 raise CianNotFoundError(
                     f"Cian API returned {resp.status_code} (not found) for {url}"
                 )

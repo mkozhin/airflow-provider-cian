@@ -7,6 +7,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
+from airflow.exceptions import AirflowException
 
 from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS
 
@@ -100,80 +101,92 @@ class TestBuildPath:
 class TestEnrich:
     def test_is_targeted_true_when_billing_positive(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        hook = _make_hook_mock([{"id": 1, "newbuildingId": 10, "billingPrice": 50}])
-        enriched = op._enrich([{"id": 1, "newbuildingId": 10, "billingPrice": 50}], hook)
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 50, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook)
         assert enriched[0]["is_targeted"] is True
 
     def test_is_targeted_false_when_billing_zero(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        hook = _make_hook_mock([{"id": 1, "newbuildingId": 10, "billingPrice": 0}])
-        enriched = op._enrich([{"id": 1, "newbuildingId": 10, "billingPrice": 0}], hook)
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook)
         assert enriched[0]["is_targeted"] is False
 
     def test_cache_minimises_api_calls(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [
-            {"id": 1, "newbuildingId": 10, "billingPrice": 0},
-            {"id": 2, "newbuildingId": 10, "billingPrice": 0},
-            {"id": 3, "newbuildingId": 20, "billingPrice": 0},
+            {"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"},
+            {"id": 2, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T11:00:00"},
+            {"id": 3, "newbuildingId": 20, "billingPrice": 0, "date": "2024-01-15T12:00:00"},
         ]
-        hook = _make_hook_mock(records, {10: "ЖК А", 20: "ЖК Б"})
+        hook = _make_hook_mock([], {10: "ЖК А", 20: "ЖК Б"})
         op._enrich(records, hook)
         assert hook.get_newbuilding_name.call_count == 2
 
     def test_newbuilding_name_populated(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
-        hook = _make_hook_mock(records, {10: "ЖК Речной"})
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([], {10: "ЖК Речной"})
         enriched = op._enrich(records, hook)
         assert enriched[0]["newbuilding_name"] == "ЖК Речной"
 
     def test_datetime_without_timezone_gets_msk_offset(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22"}]
-        hook = _make_hook_mock(records)
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
         assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
-        assert enriched[0]["date"] == "2026-06-03"
+        assert enriched[0]["date"] == "2024-01-15"
 
     def test_datetime_with_existing_msk_offset_unchanged(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22+03:00"}]
-        hook = _make_hook_mock(records)
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
         assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
-        assert enriched[0]["date"] == "2026-06-03"
+        assert enriched[0]["date"] == "2024-01-15"
 
     def test_datetime_with_non_msk_offset_converted_to_msk(self, tmp_path):
-        # UTC +00:00 → converted to MSK +03:00; date must be Moscow date
+        # UTC +00:00 → converted to MSK +03:00; date field is always the operator date
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T00:30:00+00:00"}]
-        hook = _make_hook_mock(records)
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
         assert enriched[0]["datetime"] == "2026-06-03T03:30:00+03:00"
-        assert enriched[0]["date"] == "2026-06-03"
+        assert enriched[0]["date"] == "2024-01-15"
 
     def test_datetime_midnight_boundary_utc_vs_msk(self, tmp_path):
-        # 2026-06-02T23:30:00+00:00 = 2026-06-03T02:30:00+03:00 → date must be 2026-06-03 (MSK)
+        # 2026-06-02T23:30:00+00:00 = 2026-06-03T02:30:00+03:00
+        # date must be operator date "2024-01-15", not the MSK date from the timestamp
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-02T23:30:00+00:00"}]
-        hook = _make_hook_mock(records)
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
         assert enriched[0]["datetime"] == "2026-06-03T02:30:00+03:00"
-        assert enriched[0]["date"] == "2026-06-03"
+        assert enriched[0]["date"] == "2024-01-15"
 
-    def test_datetime_none_when_date_missing(self, tmp_path):
-        op = _make_operator(str(tmp_path))
-        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
-        hook = _make_hook_mock(records)
+    def test_date_field_is_operator_date_not_msk_date(self, tmp_path):
+        # Late UTC timestamp rolls over to next MSK day; date field must stay as operator date
+        op = _make_operator(str(tmp_path))  # date="2024-01-15"
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T23:30:00+00:00"}]
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
-        assert enriched[0]["date"] is None
-        assert enriched[0]["datetime"] is None
+        # MSK datetime would be 2024-01-16T02:30:00+03:00, but date must remain "2024-01-15"
+        assert enriched[0]["datetime"] == "2024-01-16T02:30:00+03:00"
+        assert enriched[0]["date"] == "2024-01-15"
+
+    def test_missing_date_field_raises_airflow_exception(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0}]  # no "date" key
+        hook = _make_hook_mock([])
+        with pytest.raises(AirflowException, match="id=7"):
+            op._enrich(records, hook)
 
     def test_enriched_record_has_exactly_csv_fields(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0}]
-        hook = _make_hook_mock(records)
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
         enriched = op._enrich(records, hook)
         assert set(enriched[0].keys()) == set(_CSV_FIELDS)
 
