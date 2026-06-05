@@ -55,7 +55,7 @@ BQ_SCHEMA = [
     {"name": "newbuilding_id",        "type": "INTEGER",   "mode": "NULLABLE"},
     {"name": "newbuilding_name",      "type": "STRING",    "mode": "NULLABLE"},
     {"name": "date",                  "type": "DATE",      "mode": "NULLABLE"},
-    {"name": "datetime",              "type": "TIMESTAMP", "mode": "NULLABLE"},
+    {"name": "datetime",              "type": "STRING",    "mode": "NULLABLE"},
     {"name": "action_type",           "type": "STRING",    "mode": "NULLABLE"},
     {"name": "searcher_phone",        "type": "STRING",    "mode": "NULLABLE"},
     {"name": "searcher_ct_phone",     "type": "STRING",    "mode": "NULLABLE"},
