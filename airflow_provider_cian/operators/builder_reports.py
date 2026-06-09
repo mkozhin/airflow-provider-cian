@@ -7,9 +7,10 @@ import re
 from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.exceptions import AirflowException
+from airflow.hooks.base import BaseHook
 from airflow.models import BaseOperator
 
-from airflow_provider_cian.hooks.cian import CianHook
+from airflow_provider_cian.hooks.cian import Account, CianHook
 
 _MSK = timezone(timedelta(hours=3))
 _OUTPUT_FORMATS = ("json", "csv")
@@ -47,6 +48,7 @@ class CianBuilderReportsOperator(BaseOperator):
         date: str,
         base_dir: str = "/tmp/cian",
         output_format: str = "json",
+        account: Account | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -56,25 +58,35 @@ class CianBuilderReportsOperator(BaseOperator):
         self.date = date
         self.base_dir = base_dir
         self.output_format = output_format
+        self.account = account
 
     def execute(self, context) -> str:
-        output_path = self._build_path(context["run_id"])
+        if self.account is not None:
+            cabinet_id: str | None = self.account.id
+            hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account.id)
+        else:
+            conn = BaseHook.get_connection(self.cian_conn_id)
+            cabinet_id = Account(id=conn.login).id if conn.login else None
+            hook = CianHook(cian_conn_id=self.cian_conn_id)
+
+        output_path = self._build_path(context["run_id"], cabinet_id)
 
         if os.path.exists(output_path):
             os.remove(output_path)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-        hook = CianHook(cian_conn_id=self.cian_conn_id)
         records = hook.get_builder_reports(self.date)
         enriched = self._enrich(records, hook)
         self._write(enriched, output_path)
 
         return output_path
 
-    def _build_path(self, run_id: str) -> str:
+    def _build_path(self, run_id: str, cabinet_id: str | None = None) -> str:
         safe_run_id = re.sub(r"[^\w-]", "_", run_id)
         ext = "json" if self.output_format == "json" else "csv"
+        if cabinet_id is not None:
+            return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
         return os.path.join(self.base_dir, safe_run_id, f"{self.date}.{ext}")
 
     def _enrich(self, records: list[dict], hook: CianHook) -> list[dict]:
