@@ -28,23 +28,18 @@ pool=POOL в default_args ограничивает суммарную парал
 max_active_tasks ограничивает параллельность внутри одного DAG-рана.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil
 from datetime import date, timedelta
-from typing import Any
 
 from airflow.decorators import dag, task
-from airflow.exceptions import AirflowException
 from airflow.models.param import Param
 from airflow.utils.task_group import TaskGroup
 from airflow.providers.amazon.aws.transfers.local_to_s3 import LocalFilesystemToS3Operator
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
-from google.api_core.exceptions import Conflict
 
 from airflow_provider_cian.hooks.cian import Account, get_accounts
 from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator
@@ -62,7 +57,7 @@ BQ_DATASET   = "cian"
 BQ_TABLE     = "builder_reports"
 
 S3_CONN_ID   = "aws_default"
-S3_BUCKET    = "project-osnova"
+S3_BUCKET    = "project-abc"
 S3_PREFIX    = "raw/placements/price/cian/new"
 
 POOL             = "cian_pool"
@@ -91,10 +86,10 @@ BQ_SCHEMA = [
     {"name": "is_targeted",           "type": "BOOLEAN",   "mode": "NULLABLE"},
 ]
 
-# ── default_args — pool применяется ко всем тасками автоматически ─────────────
+# ── default_args ──────────────────────────────────────────────────────────────
 
 DEFAULT_ARGS = {
-    "owner":             "analytics",
+    "owner":             "example",
     "retries":           2,
     "retry_delay":       timedelta(minutes=5),
     "execution_timeout": timedelta(hours=2),
@@ -112,124 +107,11 @@ def date_range(date_from: str, date_to: str) -> list[str]:
     end   = date.fromisoformat(date_to)
     days  = (end - start).days + 1
     if days <= 0:
-        raise AirflowException(
-            f"date_from ({date_from}) must be <= date_to ({date_to})"
-        )
+        raise ValueError(f"date_from ({date_from}) must be <= date_to ({date_to})")
     return [(end - timedelta(days=i)).isoformat() for i in range(days)]
 
 
-# ── module-level @task helpers (вызываются из фабрики с литеральным cabinet_id) ─
-
-
-@task
-def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, **context) -> list[dict]:
-    sid = safe_id(context["run_id"])
-    return [
-        {"src": path, "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"}
-        for path, d in zip(paths, dates)
-    ]
-
-
-@task
-def make_bq_params(dates: list[str], cabinet_id: str, **context) -> list[dict]:
-    sid = safe_id(context["run_id"])
-    return [
-        {
-            "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"],
-            "destination_project_dataset_table": (
-                f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}_{cabinet_id}${d.replace('-', '')}"
-            ),
-        }
-        for d in dates
-    ]
-
-
-@task
-def make_s3_params(paths: list[str], dates: list[str], cabinet_id: str) -> list[dict]:
-    params = []
-    for path, d in zip(paths, dates):
-        year, month, day = d.split("-")
-        date_compact = d.replace("-", "")
-        params.append({
-            "filename": path,
-            "dest_key": (
-                f"{S3_PREFIX}/{cabinet_id}"
-                f"/_year={year}/_month={month}/_day={day}"
-                f"/_date={date_compact}/{d}.json"
-            ),
-        })
-    return params
-
-
-@task(trigger_rule="all_done")
-def cleanup(paths: list[str], cabinet_id: str, **context) -> None:
-    """Удаляет папку кабинета за текущий запуск: {BASE_DIR}/{cabinet_id}/{run_id}/"""
-    if not paths:
-        return
-    sid = safe_id(context["run_id"])
-    run_dir = os.path.join(BASE_DIR, cabinet_id, sid)
-    if not os.path.isdir(run_dir):
-        return
-    shutil.rmtree(run_dir)
-
-
-# ── фабрика TaskGroup ─────────────────────────────────────────────────────────
-
-
-def make_cabinet_group(account: Account, dates: Any, bucket_ready: Any) -> None:
-    """Создаёт TaskGroup для одного кабинета."""
-    cab_id = account.id
-
-    with TaskGroup(group_id=f"cabinet_{cab_id}"):
-        collect = CianBuilderReportsOperator.partial(
-            task_id="collect",
-            cian_conn_id=CIAN_CONN_ID,
-            base_dir=BASE_DIR,
-            output_format="json",
-            account_id=cab_id,
-        )
-
-        upload_gcs = LocalFilesystemToGCSOperator.partial(
-            task_id="upload_gcs",
-            gcp_conn_id=GCP_CONN_ID,
-            bucket=GCS_BUCKET,
-        )
-
-        load_bq = GCSToBigQueryOperator.partial(
-            task_id="load_bq",
-            gcp_conn_id=GCP_CONN_ID,
-            bucket=GCS_BUCKET,
-            schema_fields=BQ_SCHEMA,
-            source_format="NEWLINE_DELIMITED_JSON",
-            write_disposition="WRITE_TRUNCATE",
-            create_disposition="CREATE_IF_NEEDED",
-            time_partitioning={"type": "DAY", "field": "date"},
-        )
-
-        upload_s3 = LocalFilesystemToS3Operator.partial(
-            task_id="upload_s3",
-            aws_conn_id=S3_CONN_ID,
-            dest_bucket=S3_BUCKET,
-            replace=True,
-        )
-
-        paths      = collect.expand(date=dates).output
-        gcs_params = make_gcs_params(paths, dates, cabinet_id=cab_id)
-        bq_params  = make_bq_params(dates, cabinet_id=cab_id)
-        s3_params  = make_s3_params(paths, dates, cabinet_id=cab_id)
-
-        gcs_done = upload_gcs.expand_kwargs(gcs_params)
-        bq_done  = load_bq.expand_kwargs(bq_params)
-        s3_done  = upload_s3.expand_kwargs(s3_params)
-
-        bucket_ready >> gcs_done >> bq_done
-        [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
-
-
 # ── DAG ───────────────────────────────────────────────────────────────────────
-
-accounts = get_accounts(CIAN_CONN_ID)
-
 
 @dag(
     dag_id="cian_to_bq_and_s3_multi_account",
@@ -263,13 +145,104 @@ def cian_to_bq_and_s3_multi_account():
     @task
     def ensure_gcs_bucket() -> None:
         client = GCSHook(gcp_conn_id=GCP_CONN_ID).get_conn()
-        try:
+        bucket = client.bucket(GCS_BUCKET)
+        if not bucket.exists():
             bucket = client.create_bucket(GCS_BUCKET)
-        except Conflict:
-            bucket = client.get_bucket(GCS_BUCKET)
         bucket.lifecycle_rules = [{"action": {"type": "Delete"}, "condition": {"age": 1}}]
         bucket.patch()
 
+    @task
+    def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, **context) -> list[dict]:
+        sid = safe_id(context["run_id"])
+        return [
+            {"src": path, "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"}
+            for path, d in zip(paths, dates)
+        ]
+
+    @task
+    def make_bq_params(dates: list[str], cabinet_id: str, **context) -> list[dict]:
+        sid = safe_id(context["run_id"])
+        return [
+            {
+                "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"],
+                "destination_project_dataset_table": (
+                    f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}_{cabinet_id}${d.replace('-', '')}"
+                ),
+            }
+            for d in dates
+        ]
+
+    @task
+    def make_s3_params(paths: list[str], dates: list[str], cabinet_id: str) -> list[dict]:
+        params = []
+        for path, d in zip(paths, dates):
+            year, month, day = d.split("-")
+            date_compact = d.replace("-", "")
+            params.append({
+                "filename": path,
+                "dest_key": (
+                    f"{S3_PREFIX}/{cabinet_id}"
+                    f"/_year={year}/_month={month}/_day={day}"
+                    f"/_date={date_compact}/{d}.json"
+                ),
+            })
+        return params
+
+    @task(trigger_rule="all_done")
+    def cleanup(paths: list[str], cabinet_id: str, **context) -> None:
+        if not paths:
+            return
+        sid = safe_id(context["run_id"])
+        run_dir = os.path.join(BASE_DIR, cabinet_id, sid)
+        if not os.path.isdir(run_dir):
+            return
+        shutil.rmtree(run_dir)
+
+    def make_cabinet_group(account: Account, dates, bucket_ready) -> None:
+        cab_id = account.id
+        with TaskGroup(group_id=f"cabinet_{cab_id}"):
+            collect = CianBuilderReportsOperator.partial(
+                task_id="collect",
+                cian_conn_id=CIAN_CONN_ID,
+                base_dir=BASE_DIR,
+                output_format="json",
+                account_id=cab_id,
+            )
+            upload_gcs = LocalFilesystemToGCSOperator.partial(
+                task_id="upload_gcs",
+                gcp_conn_id=GCP_CONN_ID,
+                bucket=GCS_BUCKET,
+            )
+            load_bq = GCSToBigQueryOperator.partial(
+                task_id="load_bq",
+                gcp_conn_id=GCP_CONN_ID,
+                bucket=GCS_BUCKET,
+                schema_fields=BQ_SCHEMA,
+                source_format="NEWLINE_DELIMITED_JSON",
+                write_disposition="WRITE_TRUNCATE",
+                create_disposition="CREATE_IF_NEEDED",
+                time_partitioning={"type": "DAY", "field": "date"},
+            )
+            upload_s3 = LocalFilesystemToS3Operator.partial(
+                task_id="upload_s3",
+                aws_conn_id=S3_CONN_ID,
+                dest_bucket=S3_BUCKET,
+                replace=True,
+            )
+
+            paths      = collect.expand(date=dates).output
+            gcs_params = make_gcs_params(paths, dates, cabinet_id=cab_id)
+            bq_params  = make_bq_params(dates, cabinet_id=cab_id)
+            s3_params  = make_s3_params(paths, dates, cabinet_id=cab_id)
+
+            gcs_done = upload_gcs.expand_kwargs(gcs_params)
+            bq_done  = load_bq.expand_kwargs(bq_params)
+            s3_done  = upload_s3.expand_kwargs(s3_params)
+
+            bucket_ready >> gcs_done >> bq_done
+            [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
+
+    accounts     = get_accounts(CIAN_CONN_ID)
     dates        = get_dates()
     bucket_ready = ensure_gcs_bucket()
 
