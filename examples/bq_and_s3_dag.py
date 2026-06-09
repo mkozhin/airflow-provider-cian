@@ -22,6 +22,7 @@ import re
 from datetime import date, timedelta
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowException
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.transfers.local_to_s3 import LocalFilesystemToS3Operator
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
@@ -91,6 +92,10 @@ def date_range(date_from: str, date_to: str) -> list[str]:
     start = date.fromisoformat(date_from)
     end   = date.fromisoformat(date_to)
     days  = (end - start).days + 1
+    if days <= 0:
+        raise AirflowException(
+            f"date_from ({date_from}) must be <= date_to ({date_to})"
+        )
     return [(end - timedelta(days=i)).isoformat() for i in range(days)]
 
 

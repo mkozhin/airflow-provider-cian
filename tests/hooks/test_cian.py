@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from airflow.exceptions import AirflowException
 from airflow.models import Connection
 
-from airflow_provider_cian.hooks.cian import CianHook, CianNotFoundError
+from airflow_provider_cian.hooks.cian import Account, CianHook, CianNotFoundError, get_accounts
 
 
 def _make_hook() -> CianHook:
@@ -27,6 +28,20 @@ def _mock_response(status_code: int, json_data: dict | None = None) -> MagicMock
     resp.json.return_value = json_data or {}
     resp.text = str(json_data)
     return resp
+
+
+def _make_hook_with_accounts(accounts: list[dict], password: str = "default-token") -> CianHook:
+    """Create a CianHook whose connection has the given accounts list in extra."""
+    hook = CianHook(cian_conn_id="cian_test")
+    conn = Connection(
+        conn_id="cian_test",
+        conn_type="http",
+        host="https://public-api.cian.ru",
+        password=password,
+        extra=json.dumps({"accounts": accounts}),
+    )
+    hook.get_connection = MagicMock(return_value=conn)
+    return hook
 
 
 class TestGetBuilderReports:
@@ -181,3 +196,213 @@ class TestTestConnection:
 class TestCianNotFoundError:
     def test_is_subclass_of_airflow_exception(self):
         assert issubclass(CianNotFoundError, AirflowException)
+
+
+class TestAccountDataclass:
+    def test_sanitizes_id_with_dots_and_slashes(self):
+        acc = Account(id="a.b/c")
+        assert acc.id == "a_b_c"
+
+    def test_valid_id_unchanged(self):
+        acc = Account(id="abc-123_XYZ")
+        assert acc.id == "abc-123_XYZ"
+
+    def test_spaces_sanitized(self):
+        acc = Account(id="my account")
+        assert acc.id == "my_account"
+
+
+class TestCianHookWithAccountId:
+    def test_uses_account_token_when_account_id_matches(self):
+        accounts = [{"id": "abc", "token": "account-token"}, {"id": "xyz", "token": "other-token"}]
+        hook = CianHook(cian_conn_id="cian_test", account_id="abc")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="default-token",
+            extra=json.dumps({"accounts": accounts}),
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        response = _mock_response(200, {"result": {"reports": []}})
+        with patch("requests.get", return_value=response) as mock_get:
+            with patch("time.sleep"):
+                hook.get_builder_reports("2024-01-01")
+
+        headers = mock_get.call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer account-token"
+
+    def test_raises_airflow_exception_when_account_id_missing(self):
+        accounts = [{"id": "abc", "token": "account-token"}]
+        hook = CianHook(cian_conn_id="cian_test", account_id="missing")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="default-token",
+            extra=json.dumps({"accounts": accounts}),
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        with pytest.raises(AirflowException, match="missing"):
+            hook.get_builder_reports("2024-01-01")
+
+    def test_without_account_id_uses_conn_password(self):
+        accounts = [{"id": "abc", "token": "account-token"}]
+        hook = _make_hook_with_accounts(accounts, password="default-token")
+        # account_id defaults to None in constructor
+
+        response = _mock_response(200, {"result": {"reports": []}})
+        with patch("requests.get", return_value=response) as mock_get:
+            with patch("time.sleep"):
+                hook.get_builder_reports("2024-01-01")
+
+        headers = mock_get.call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer default-token"
+
+    def test_raises_when_no_account_id_and_conn_password_is_none(self):
+        """Single-account mode with no password set must raise AirflowException, not Bearer None."""
+        hook = CianHook(cian_conn_id="cian_test")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password=None,
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        with pytest.raises(AirflowException, match="no password"):
+            hook.get_builder_reports("2024-01-01")
+
+    def test_account_id_matched_by_sanitized_id(self):
+        """Account with id 'a.b' in extra should be found when account_id='a_b'."""
+        hook = CianHook(cian_conn_id="cian_test", account_id="a_b")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="default-token",
+            extra=json.dumps({"accounts": [{"id": "a.b", "token": "dotted-token"}]}),
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        response = _mock_response(200, {"result": {"reports": []}})
+        with patch("requests.get", return_value=response) as mock_get:
+            with patch("time.sleep"):
+                hook.get_builder_reports("2024-01-01")
+
+        headers = mock_get.call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer dotted-token"
+
+    def test_raises_when_account_found_but_token_missing(self):
+        """Account entry found by id but lacking 'token' key must raise AirflowException."""
+        hook = CianHook(cian_conn_id="cian_test", account_id="abc")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="default-token",
+            extra=json.dumps({"accounts": [{"id": "abc"}]}),
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        with pytest.raises(AirflowException, match="missing required 'token' field"):
+            hook.get_builder_reports("2024-01-01")
+
+    def test_error_message_includes_account_id_and_conn_id(self):
+        hook = CianHook(cian_conn_id="cian_test", account_id="nonexistent")
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="default-token",
+            extra=json.dumps({"accounts": []}),
+        )
+        hook.get_connection = MagicMock(return_value=conn)
+
+        with pytest.raises(AirflowException) as exc_info:
+            hook.get_builder_reports("2024-01-01")
+
+        msg = str(exc_info.value)
+        assert "nonexistent" in msg
+        assert "cian_test" in msg
+
+
+class TestGetAccounts:
+    def _make_conn_with_accounts(self, accounts: list[dict]) -> Connection:
+        return Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+            password="test-token",
+            extra=json.dumps({"accounts": accounts}),
+        )
+
+    def test_returns_list_of_accounts_with_sanitized_ids(self):
+        conn = self._make_conn_with_accounts([{"id": "abc"}, {"id": "def"}])
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            result = get_accounts("cian_test")
+
+        assert len(result) == 2
+        assert result[0].id == "abc"
+        assert result[1].id == "def"
+        assert all(isinstance(a, Account) for a in result)
+
+    def test_ids_are_sanitized(self):
+        conn = self._make_conn_with_accounts([{"id": "a.b/c"}, {"id": "x-y_z"}])
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            result = get_accounts("cian_test")
+
+        assert result[0].id == "a_b_c"
+        assert result[1].id == "x-y_z"
+
+    def test_returns_empty_list_when_no_accounts_key(self):
+        conn = Connection(
+            conn_id="cian_test",
+            conn_type="http",
+            host="https://public-api.cian.ru",
+        )
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            result = get_accounts("cian_test")
+
+        assert result == []
+
+    def test_returns_empty_list_when_connection_not_found(self):
+        from airflow.exceptions import AirflowNotFoundException
+
+        with patch(
+            "airflow.hooks.base.BaseHook.get_connection",
+            side_effect=AirflowNotFoundException("not found"),
+        ):
+            result = get_accounts("nonexistent")
+
+        assert result == []
+
+    def test_duplicate_sanitized_ids_keeps_first(self):
+        # "a.b" and "a/b" both sanitize to "a_b"
+        conn = self._make_conn_with_accounts([{"id": "a.b"}, {"id": "a/b"}])
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            result = get_accounts("cian_test")
+
+        assert len(result) == 1
+        assert result[0].id == "a_b"
+
+    def test_duplicate_sanitized_ids_logs_warning(self):
+        conn = self._make_conn_with_accounts([{"id": "a.b"}, {"id": "a/b"}])
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            with patch("airflow_provider_cian.hooks.cian.log") as mock_log:
+                get_accounts("cian_test")
+
+        mock_log.warning.assert_called_once()
+        warning_msg = mock_log.warning.call_args[0][0]
+        assert "Duplicate" in warning_msg
+
+    def test_entry_missing_id_key_is_skipped_and_does_not_raise(self):
+        """Entry with no 'id' key is silently skipped; valid entries still returned."""
+        conn = self._make_conn_with_accounts([{"token": "abc"}, {"id": "valid"}])
+        with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
+            result = get_accounts("cian_test")
+
+        assert len(result) == 1
+        assert result[0].id == "valid"
