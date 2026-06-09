@@ -46,6 +46,17 @@ To collect data from several Cian cabinets using a single connection, put tokens
 
 The `id` can be any string that uniquely identifies the cabinet (e.g. the numeric cabinet ID from Cian). Non-alphanumeric characters are sanitised to `_` for use in file paths and BigQuery table names.
 
+### Token resolution
+
+The token source is controlled **solely by `account_id`** on the operator — not by whether `Password` or `Extra` is filled in:
+
+| `account_id` on operator | Token taken from |
+|---|---|
+| not set (`None`) | `conn.password` — error if empty |
+| `"111"` | `extra.accounts` entry where `id == "111"` — error if not found or token empty |
+
+`Password` and `Extra` are independent fields and do not interfere with each other. If both are filled in, the operator uses one and ignores the other depending on `account_id`.
+
 ## Operator Parameters
 
 `CianBuilderReportsOperator`:
