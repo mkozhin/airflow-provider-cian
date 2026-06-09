@@ -45,7 +45,7 @@ BQ_DATASET   = "cian"
 BQ_TABLE     = "builder_reports"
 
 S3_CONN_ID   = "aws_default"
-S3_BUCKET    = "project-osnova"
+S3_BUCKET    = "my-s3-bucket"
 S3_PREFIX    = "raw/placements/price/cian/new"
 
 # ── BQ schema (18 полей) ──────────────────────────────────────────────────────

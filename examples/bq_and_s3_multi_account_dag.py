@@ -1,31 +1,43 @@
 """
 DAG: сбор Cian Builder Reports для нескольких кабинетов → BigQuery + S3.
 
-Структура:
-  get_dates ──┐
-              ├─→ [cabinet_{id}] TaskGroup (по одному на каждый аккаунт)
-  ensure_gcs_bucket ─┘
+## Структура
 
-Внутри каждого TaskGroup (cabinet_{cabinet_id}):
-  collect (×N дат) → upload_gcs → load_bq
-                   ↘ upload_s3
-                                  → cleanup
+```
+get_dates ──┐
+            ├─→ [cabinet_{id}] TaskGroup (по одному на каждый аккаунт)
+ensure_gcs_bucket ─┘
+```
 
-Каждый кабинет:
-  - хранит файлы в отдельной папке: {BASE_DIR}/{cabinet_id}/{run_id}/{date}.json
-  - кладёт промежуточные файлы в GCS: {GCS_PREFIX}/{cabinet_id}/{run_id}/{date}.json
-  - загружает в отдельную BQ таблицу: {BQ_TABLE}_{cabinet_id}${YYYYMMDD}
-  - кладёт в S3: {S3_PREFIX}/{cabinet_id}/_year=.../_month=.../_day=.../_date=.../{date}.json
-  - чистит только свою папку после завершения загрузок
+Внутри каждого `TaskGroup` (`cabinet_{cabinet_id}`):
 
-Формат extra в Airflow-коннекторе:
-  {"accounts": [{"id": "123", "token": "abc..."}, {"id": "456", "token": "def..."}]}
+```
+collect (×N дат) → upload_gcs → load_bq
+                 ↘ upload_s3
+                                → cleanup
+```
 
-При пустом или отсутствующем коннекторе (get_accounts возвращает []):
-  DAG импортируется без TaskGroup-ов и без ошибок.
+## Каждый кабинет
 
-pool=POOL в default_args ограничивает суммарную параллельность по всем DAG-ам.
-max_active_tasks ограничивает параллельность внутри одного DAG-рана.
+- хранит файлы в отдельной папке: `{BASE_DIR}/{cabinet_id}/{run_id}/{date}.json`
+- кладёт промежуточные файлы в GCS: `{GCS_PREFIX}/{cabinet_id}/{run_id}/{date}.json`
+- загружает в отдельную BQ таблицу: `{BQ_TABLE}_{cabinet_id}${YYYYMMDD}`
+- кладёт в S3: `{S3_PREFIX}/{cabinet_id}/_year=.../_month=.../_day=.../_date=.../{date}.json`
+- чистит только свою папку после завершения загрузок
+
+## Формат extra в Airflow-коннекторе
+
+```json
+{"accounts": [{"id": "123", "token": "abc..."}, {"id": "456", "token": "def..."}]}
+```
+
+При пустом или отсутствующем коннекторе (`get_accounts` возвращает `[]`):
+DAG импортируется без TaskGroup-ов и без ошибок.
+
+## Параллелизм
+
+`pool=POOL` в `default_args` ограничивает суммарную параллельность по всем DAG-ам.
+`max_active_tasks` ограничивает параллельность внутри одного DAG-рана.
 """
 
 import os
@@ -57,7 +69,7 @@ BQ_DATASET   = "cian"
 BQ_TABLE     = "builder_reports"
 
 S3_CONN_ID   = "aws_default"
-S3_BUCKET    = "project-abc"
+S3_BUCKET    = "my-s3-bucket"
 S3_PREFIX    = "raw/placements/price/cian/new"
 
 POOL             = "cian_pool"
