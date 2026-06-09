@@ -82,7 +82,7 @@ class TestBuildPath:
     def test_sanitizes_run_id(self, tmp_path):
         op = _make_operator(str(tmp_path))
         path = op._build_path("scheduled__2024-01-15T00:00:00+00:00")
-        assert "scheduled__2024-01-15T00_00_00_00_00_" in path or "+" not in path
+        assert "+" not in path
 
     def test_json_extension(self, tmp_path):
         op = _make_operator(str(tmp_path), "json")
@@ -373,7 +373,7 @@ class TestBuildPathWithCabinetId:
 
 
 class TestExecuteWithAccount:
-    def _run_with_account(self, tmp_path, account, conn_login=None, records=None):
+    def _run_with_account_id(self, tmp_path, account_id, conn_login=None, records=None):
         if records is None:
             records = _sample_records()
         op = CianBuilderReportsOperator(
@@ -382,7 +382,7 @@ class TestExecuteWithAccount:
             date="2024-01-15",
             base_dir=str(tmp_path),
             output_format="json",
-            account=account,
+            account_id=account_id,
         )
         hook = _make_hook_mock(records, {10: "ЖК Тест"})
         mock_conn = MagicMock(spec=Connection)
@@ -396,23 +396,23 @@ class TestExecuteWithAccount:
         return path, MockHook
 
     def test_execute_with_account_path_contains_cabinet_id(self, tmp_path):
-        path, _ = self._run_with_account(tmp_path, Account(id="abc"))
+        path, _ = self._run_with_account_id(tmp_path, Account(id="abc").id)
         assert "abc" in path
 
     def test_execute_with_account_sanitized_id_in_path(self, tmp_path):
         """Account(id='a.b') sanitizes to 'a_b' via __post_init__, path uses sanitized id."""
-        path, _ = self._run_with_account(tmp_path, Account(id="a.b"))
+        path, _ = self._run_with_account_id(tmp_path, Account(id="a.b").id)
         assert "a_b" in path
 
     def test_execute_with_account_hook_created_with_account_id(self, tmp_path):
-        _, MockHook = self._run_with_account(tmp_path, Account(id="abc"))
+        _, MockHook = self._run_with_account_id(tmp_path, "abc")
         MockHook.assert_called_once_with(cian_conn_id="cian_test", account_id="abc")
 
-    def test_execute_with_account_no_token_override_kwarg(self, tmp_path):
-        """Operator must NOT pass token_override — that's the hook's job."""
-        _, MockHook = self._run_with_account(tmp_path, Account(id="abc"))
+    def test_execute_with_account_hook_kwargs_only_conn_and_account(self, tmp_path):
+        """Operator passes only cian_conn_id and account_id to CianHook — nothing else."""
+        _, MockHook = self._run_with_account_id(tmp_path, "abc")
         call_kwargs = MockHook.call_args.kwargs
-        assert "token_override" not in call_kwargs
+        assert set(call_kwargs.keys()) == {"cian_conn_id", "account_id"}
 
     def test_execute_without_account_with_conn_login_path_has_login(self, tmp_path):
         op = CianBuilderReportsOperator(
@@ -454,3 +454,28 @@ class TestExecuteWithAccount:
         parts = rel.split(os.sep)
         # Exactly 2 parts: <run_id_sanitized>/<date>.json
         assert len(parts) == 2, f"Expected 2 path parts, got {parts}"
+
+    def test_account_id_takes_priority_over_conn_login(self, tmp_path):
+        """When account_id is set, it is used as cabinet_id even if conn.login is present."""
+        op = CianBuilderReportsOperator(
+            task_id="test_collect",
+            cian_conn_id="cian_test",
+            date="2024-01-15",
+            base_dir=str(tmp_path),
+            output_format="json",
+            account_id="acct123",
+        )
+        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
+        mock_conn = _make_conn_mock(login="some_login")
+
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook, \
+             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+                   return_value=mock_conn):
+            MockHook.return_value = hook
+            path = op.execute(_make_context("run-1"))
+
+        # Path uses account_id, not conn.login
+        assert "acct123" in path
+        assert "some_login" not in path
+        # Hook is created with account_id
+        MockHook.assert_called_once_with(cian_conn_id="cian_test", account_id="acct123")

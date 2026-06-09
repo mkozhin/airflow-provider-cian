@@ -48,7 +48,7 @@ class CianBuilderReportsOperator(BaseOperator):
         date: str,
         base_dir: str = "/tmp/cian",
         output_format: str = "json",
-        account: Account | None = None,
+        account_id: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -58,12 +58,12 @@ class CianBuilderReportsOperator(BaseOperator):
         self.date = date
         self.base_dir = base_dir
         self.output_format = output_format
-        self.account = account
+        self.account_id = account_id
 
     def execute(self, context) -> str:
-        if self.account is not None:
-            cabinet_id: str | None = self.account.id
-            hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account.id)
+        if self.account_id is not None:
+            cabinet_id = self.account_id
+            hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account_id)
         else:
             conn = BaseHook.get_connection(self.cian_conn_id)
             cabinet_id = Account(id=conn.login).id if conn.login else None

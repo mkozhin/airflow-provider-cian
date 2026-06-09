@@ -32,10 +32,14 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from datetime import date, timedelta
+from typing import Any
 
-from airflow.decorators import dag, task, task_group
+from airflow.decorators import dag, task
+from airflow.exceptions import AirflowException
 from airflow.models.param import Param
+from airflow.utils.task_group import TaskGroup
 from airflow.providers.amazon.aws.transfers.local_to_s3 import LocalFilesystemToS3Operator
 from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
@@ -99,22 +103,27 @@ DEFAULT_ARGS = {
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def safe_id(run_id: str | None) -> str:
-    return re.sub(r"[^\w-]", "_", run_id or "")
+def safe_id(run_id: str) -> str:
+    return re.sub(r"[^\w-]", "_", run_id)
 
 
 def date_range(date_from: str, date_to: str) -> list[str]:
     start = date.fromisoformat(date_from)
     end   = date.fromisoformat(date_to)
     days  = (end - start).days + 1
+    if days <= 0:
+        raise AirflowException(
+            f"date_from ({date_from}) must be <= date_to ({date_to})"
+        )
     return [(end - timedelta(days=i)).isoformat() for i in range(days)]
 
 
 # ── module-level @task helpers (вызываются из фабрики с литеральным cabinet_id) ─
 
+
 @task
-def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, run_id: str | None = None) -> list[dict]:
-    sid = safe_id(run_id)
+def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, **context) -> list[dict]:
+    sid = safe_id(context["run_id"])
     return [
         {"src": path, "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"}
         for path, d in zip(paths, dates)
@@ -122,8 +131,8 @@ def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, run_id:
 
 
 @task
-def make_bq_params(dates: list[str], cabinet_id: str, run_id: str | None = None) -> list[dict]:
-    sid = safe_id(run_id)
+def make_bq_params(dates: list[str], cabinet_id: str, **context) -> list[dict]:
+    sid = safe_id(context["run_id"])
     return [
         {
             "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"],
@@ -153,41 +162,37 @@ def make_s3_params(paths: list[str], dates: list[str], cabinet_id: str) -> list[
 
 
 @task(trigger_rule="all_done")
-def cleanup(paths: list[str], cabinet_id: str, run_id: str | None = None) -> None:
+def cleanup(paths: list[str], cabinet_id: str, **context) -> None:
     """Удаляет папку кабинета за текущий запуск: {BASE_DIR}/{cabinet_id}/{run_id}/"""
     if not paths:
         return
-    sid = safe_id(run_id)
+    sid = safe_id(context["run_id"])
     run_dir = os.path.join(BASE_DIR, cabinet_id, sid)
     if not os.path.isdir(run_dir):
         return
-    for fname in os.listdir(run_dir):
-        os.remove(os.path.join(run_dir, fname))
-    os.rmdir(run_dir)
+    shutil.rmtree(run_dir)
 
 
 # ── фабрика TaskGroup ─────────────────────────────────────────────────────────
 
-def make_cabinet_group(account: Account, dates, bucket_ready) -> None:
+
+def make_cabinet_group(account: Account, dates: Any, bucket_ready: Any) -> None:
     """Создаёт TaskGroup для одного кабинета."""
     cab_id = account.id
 
-    @task_group(group_id=f"cabinet_{cab_id}")
-    def cabinet_group():
+    with TaskGroup(group_id=f"cabinet_{cab_id}"):
         collect = CianBuilderReportsOperator.partial(
             task_id="collect",
             cian_conn_id=CIAN_CONN_ID,
             base_dir=BASE_DIR,
             output_format="json",
-            account=account,
-            pool=POOL,
+            account_id=cab_id,
         )
 
         upload_gcs = LocalFilesystemToGCSOperator.partial(
             task_id="upload_gcs",
             gcp_conn_id=GCP_CONN_ID,
             bucket=GCS_BUCKET,
-            pool=POOL,
         )
 
         load_bq = GCSToBigQueryOperator.partial(
@@ -199,7 +204,6 @@ def make_cabinet_group(account: Account, dates, bucket_ready) -> None:
             write_disposition="WRITE_TRUNCATE",
             create_disposition="CREATE_IF_NEEDED",
             time_partitioning={"type": "DAY", "field": "date"},
-            pool=POOL,
         )
 
         upload_s3 = LocalFilesystemToS3Operator.partial(
@@ -207,7 +211,6 @@ def make_cabinet_group(account: Account, dates, bucket_ready) -> None:
             aws_conn_id=S3_CONN_ID,
             dest_bucket=S3_BUCKET,
             replace=True,
-            pool=POOL,
         )
 
         paths      = collect.expand(date=dates).output
@@ -221,8 +224,6 @@ def make_cabinet_group(account: Account, dates, bucket_ready) -> None:
 
         bucket_ready >> gcs_done >> bq_done
         [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
-
-    cabinet_group()
 
 
 # ── DAG ───────────────────────────────────────────────────────────────────────

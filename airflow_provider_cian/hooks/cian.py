@@ -40,20 +40,22 @@ def get_accounts(conn_id: str) -> list[Account]:
         conn = BaseHook.get_connection(conn_id)
         raw_accounts = conn.extra_dejson.get("accounts", [])
         accounts: list[Account] = []
-        seen: dict[str, str] = {}  # sanitized_id -> original_id
+        seen: set[str] = set()
         for entry in raw_accounts:
+            if "id" not in entry:
+                log.warning("Skipping account entry missing required 'id' key: %r", entry)
+                continue
             original_id = entry["id"]
             acc = Account(id=original_id)
             if acc.id in seen:
                 log.warning(
-                    "Duplicate account id after sanitization: %r and %r both become %r. "
+                    "Duplicate account id after sanitization: %r becomes %r. "
                     "Keeping the first, skipping the second.",
-                    seen[acc.id],
                     original_id,
                     acc.id,
                 )
             else:
-                seen[acc.id] = original_id
+                seen.add(acc.id)
                 accounts.append(acc)
         return accounts
     except Exception:
@@ -111,17 +113,28 @@ class CianHook(BaseHook):
             raw_accounts = conn.extra_dejson.get("accounts", [])
             matched_token: str | None = None
             for entry in raw_accounts:
-                sanitized = re.sub(r"[^\w-]", "_", entry["id"])
-                if sanitized == self.account_id:
-                    matched_token = entry["token"]
+                if "id" not in entry:
+                    continue
+                if Account(id=entry["id"]).id == self.account_id:
+                    matched_token = entry.get("token")
+                    if not matched_token:
+                        raise AirflowException(
+                            f"Account id={self.account_id!r} found in connection "
+                            f"{self.cian_conn_id!r} but is missing required 'token' field"
+                        )
                     break
-            if matched_token is None:
+            if not matched_token:
                 raise AirflowException(
                     f"Account id={self.account_id!r} not found in connection {self.cian_conn_id!r} extra.accounts"
                 )
             token = matched_token
         else:
             token = conn.password
+            if not token:
+                raise AirflowException(
+                    f"Connection {self.cian_conn_id!r} has no password (token) set "
+                    "and no account_id was provided."
+                )
 
         headers = {"Authorization": f"Bearer {token}"}
         url = f"{base_url}{path}"
@@ -157,5 +170,3 @@ class CianHook(BaseHook):
             raise AirflowException(
                 f"Cian API error {resp.status_code} for {url}: {resp.text[:200]}"
             )
-
-        raise AirflowException(f"All retry attempts exhausted for {url}")
