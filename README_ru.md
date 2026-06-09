@@ -60,9 +60,15 @@ pip install airflow-provider-cian
 
 Оператор возвращает путь к файлу через XCom (`return_value`).
 
-Путь к файлу:
-- один кабинет: `{base_dir}/{safe_run_id}/{date}.{ext}`
-- несколько кабинетов: `{base_dir}/{cabinet_id}/{safe_run_id}/{date}.{ext}`
+Путь к файлу зависит от того, как определяется ID кабинета:
+
+| `account_id` | `conn.login` | Путь |
+|---|---|---|
+| не задан | не задан | `{base_dir}/{run_id}/{date}.{ext}` |
+| не задан | `"123"` | `{base_dir}/123/{run_id}/{date}.{ext}` |
+| `"123"` | любой | `{base_dir}/123/{run_id}/{date}.{ext}` |
+
+В однокабинетном режиме поле `Login` подключения работает как ID кабинета для изоляции путей.
 
 ### Схема данных (18 полей)
 

@@ -60,9 +60,15 @@ The `id` can be any string that uniquely identifies the cabinet (e.g. the numeri
 
 The operator returns the output file path via `return_value` XCom.
 
-Output file path:
-- single-account: `{base_dir}/{safe_run_id}/{date}.{ext}`
-- multi-account: `{base_dir}/{cabinet_id}/{safe_run_id}/{date}.{ext}`
+Output file path depends on how the cabinet ID is resolved:
+
+| `account_id` | `conn.login` | Path |
+|---|---|---|
+| not set | not set | `{base_dir}/{run_id}/{date}.{ext}` |
+| not set | `"123"` | `{base_dir}/123/{run_id}/{date}.{ext}` |
+| `"123"` | any | `{base_dir}/123/{run_id}/{date}.{ext}` |
+
+In single-account mode, setting `Login` on the connection acts as a cabinet ID for path isolation.
 
 ### Output Schema (18 fields)
 
