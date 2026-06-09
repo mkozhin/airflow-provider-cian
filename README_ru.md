@@ -18,6 +18,8 @@ pip install airflow-provider-cian
 
 ## Настройка подключения
 
+### Один кабинет
+
 Создайте HTTP-подключение в Airflow (Admin → Connections):
 
 | Поле | Значение |
@@ -29,6 +31,21 @@ pip install airflow-provider-cian
 
 Провайдер читает `conn.host` как базовый URL и `conn.password` как Bearer-токен.
 
+### Несколько кабинетов
+
+Чтобы собирать данные из нескольких кабинетов через одно подключение, укажите токены в поле **Extra** в формате JSON:
+
+```json
+{
+  "accounts": [
+    {"id": "111", "token": "Bearer <токен-кабинета-111>"},
+    {"id": "222", "token": "Bearer <токен-кабинета-222>"}
+  ]
+}
+```
+
+`id` — произвольная строка, однозначно идентифицирующая кабинет (например, числовой ID кабинета из Cian). Не алфавитно-цифровые символы автоматически заменяются на `_` при использовании в путях к файлам и именах таблиц BigQuery.
+
 ## Параметры оператора
 
 `CianBuilderReportsOperator`:
@@ -39,10 +56,13 @@ pip install airflow-provider-cian
 | `date` | str | обязательный | Дата сбора, `YYYY-MM-DD`. Поддерживает шаблон `{{ ds }}` |
 | `base_dir` | str | `/tmp/cian` | Базовая директория для файлов |
 | `output_format` | str | `json` | `json` (JSONL) или `csv` |
+| `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON) |
 
 Оператор возвращает путь к файлу через XCom (`return_value`).
 
-Путь к файлу: `{base_dir}/{safe_run_id}/{date}.{ext}`
+Путь к файлу:
+- один кабинет: `{base_dir}/{safe_run_id}/{date}.{ext}`
+- несколько кабинетов: `{base_dir}/{cabinet_id}/{safe_run_id}/{date}.{ext}`
 
 ### Схема данных (18 полей)
 
@@ -54,6 +74,26 @@ pip install airflow-provider-cian
 - `date` — дата сбора (`YYYY-MM-DD`), всегда равна параметру `date` оператора; безопасна для партиционирования BigQuery по дате
 - `datetime` — исходное datetime из API с явным московским смещением (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` вычисляется: `billing_price > 0`.
+
+## Поддержка нескольких кабинетов
+
+`get_accounts()` читает Extra-поле подключения и возвращает список объектов `Account`. Используйте его на этапе парсинга DAG, чтобы создать по одному `TaskGroup` на каждый кабинет:
+
+```python
+from airflow_provider_cian.hooks.cian import Account, get_accounts
+
+accounts = get_accounts("cian_default")  # вернёт [], если кабинеты не настроены
+for account in accounts:
+    with TaskGroup(group_id=f"cabinet_{account.id}"):
+        CianBuilderReportsOperator.partial(
+            task_id="collect",
+            cian_conn_id="cian_default",
+            account_id=account.id,   # выбирает нужный токен
+            ...
+        ).expand(date=dates)
+```
+
+Полный рабочий пример с выгрузкой в GCS, BigQuery и S3 — в файле `examples/bq_and_s3_multi_account_dag.py`.
 
 ## Пример DAG
 

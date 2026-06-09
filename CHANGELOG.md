@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0] - 2026-06-09
+
+- Feat: multi-account support — `Account` dataclass and `get_accounts(conn_id)` in `CianHook`; reads cabinet tokens from connection Extra JSON (`{"accounts": [{"id": "...", "token": "..."}]}`)
+- Feat: `account_id` parameter in `CianBuilderReportsOperator`; files are isolated per cabinet: `{base_dir}/{cabinet_id}/{run_id}/{date}.ext`
+- Feat: example DAG `bq_and_s3_multi_account_dag.py` — dynamic `TaskGroup` per cabinet with GCS → BigQuery and S3 uploads
+
 ## [0.1.3] - 2026-06-05
 
 - Fix: `get_newbuilding_name` returns `"Неизвестно"` when Cian API responds with HTTP 400 (newbuilding deleted from directory); task no longer fails on such records
