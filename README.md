@@ -114,7 +114,7 @@ collect = CianBuilderReportsOperator.partial(
 
 Each JSON record will include `snapshot_ts` — the real wall-clock start time of the DAG run (`dag_run.start_date`, naive UTC). All records within the same run share one timestamp.
 
-To query the latest snapshot per call in ClickHouse:
+To query all records from the latest snapshot in ClickHouse:
 
 ```sql
 SELECT *

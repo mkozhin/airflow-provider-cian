@@ -201,6 +201,20 @@ class TestEnrich:
         enriched = op._enrich(records, hook)
         assert set(enriched[0].keys()) == set(_CSV_FIELDS)
 
+    def test_enrich_adds_snapshot_ts_when_provided(self, tmp_path):
+        op = _make_operator(str(tmp_path), output_format="json", add_snapshot_ts=True)
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, snapshot_ts="2024-01-15T12:00:00")
+        assert enriched[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
+
+    def test_enrich_skips_snapshot_ts_when_none(self, tmp_path):
+        op = _make_operator(str(tmp_path), output_format="json")
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, snapshot_ts=None)
+        assert _SNAPSHOT_FIELD not in enriched[0]
+
 
 class TestWrite:
     def test_json_creates_jsonl_file(self, tmp_path):
@@ -359,26 +373,18 @@ class TestSnapshotTs:
             path = op.execute(_make_context("run-snap"))
         return path
 
-    def test_snapshot_ts_present_in_every_json_record(self, tmp_path):
+    def test_snapshot_ts_json_records(self, tmp_path):
+        """snapshot_ts is present in every record, has the correct value, and key set is exactly 19."""
         path = self._run_with_snapshot(tmp_path)
         with open(path, encoding="utf-8") as f:
             records = [json.loads(line) for line in f if line.strip()]
         assert len(records) == 2
+        # _make_context sets start_date = datetime(2024, 1, 15, 12, 0, 0)
+        expected_ts = "2024-01-15T12:00:00"
         for record in records:
             assert _SNAPSHOT_FIELD in record
-
-    def test_snapshot_ts_value_equals_dag_run_start_date(self, tmp_path):
-        path = self._run_with_snapshot(tmp_path)
-        with open(path, encoding="utf-8") as f:
-            records = [json.loads(line) for line in f if line.strip()]
-        # _make_context sets start_date = datetime(2024, 1, 15, 12, 0, 0)
-        assert records[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
-
-    def test_snapshot_ts_key_set_is_19_fields_when_flag_on(self, tmp_path):
-        path = self._run_with_snapshot(tmp_path)
-        with open(path, encoding="utf-8") as f:
-            records = [json.loads(line) for line in f if line.strip()]
-        assert set(records[0].keys()) == set(_CSV_FIELDS) | {_SNAPSHOT_FIELD}
+            assert record[_SNAPSHOT_FIELD] == expected_ts
+            assert set(record.keys()) == set(_CSV_FIELDS) | {_SNAPSHOT_FIELD}
 
     def test_snapshot_ts_absent_by_default(self, tmp_path):
         op = _make_operator(str(tmp_path))  # add_snapshot_ts=False by default
@@ -396,8 +402,9 @@ class TestSnapshotTs:
         path = self._run_with_snapshot(tmp_path, output_format="csv")
         with open(path, encoding="utf-8") as f:
             reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
             rows = list(reader)
-        assert _SNAPSHOT_FIELD not in rows[0]
+        assert fieldnames == _CSV_FIELDS
         assert len(rows[0]) == 18
 
     def test_empty_records_with_snapshot_ts_returns_str_path(self, tmp_path):

@@ -68,7 +68,7 @@ class CianBuilderReportsOperator(BaseOperator):
     def execute(self, context) -> str:
         snapshot_ts = (
             context["dag_run"].start_date.strftime("%Y-%m-%dT%H:%M:%S")
-            if self.add_snapshot_ts else None
+            if self.add_snapshot_ts and self.output_format == "json" else None
         )
 
         if self.account_id is not None:
@@ -138,7 +138,7 @@ class CianBuilderReportsOperator(BaseOperator):
                 "has_claim": record.get("hasClaim"),
                 "is_targeted": billing_price > 0,
             }
-            if snapshot_ts and self.output_format == "json":
+            if snapshot_ts:
                 row[_SNAPSHOT_FIELD] = snapshot_ts
             result.append(row)
         return result
