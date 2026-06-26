@@ -35,6 +35,9 @@ _CSV_FIELDS = [
     "has_claim",
     "is_targeted",
 ]
+# _CSV_FIELDS is the canonical base set for Builder Report (CSV uses exactly these 18 fields).
+# _SNAPSHOT_FIELD is the only optional extension — JSON-only output (see ADR-0001).
+_SNAPSHOT_FIELD = "snapshot_ts"
 
 
 class CianBuilderReportsOperator(BaseOperator):
@@ -49,6 +52,7 @@ class CianBuilderReportsOperator(BaseOperator):
         base_dir: str = "/tmp/cian",
         output_format: str = "json",
         account_id: str | None = None,
+        add_snapshot_ts: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -59,8 +63,14 @@ class CianBuilderReportsOperator(BaseOperator):
         self.base_dir = base_dir
         self.output_format = output_format
         self.account_id = account_id
+        self.add_snapshot_ts = add_snapshot_ts
 
     def execute(self, context) -> str:
+        snapshot_ts = (
+            context["dag_run"].start_date.strftime("%Y-%m-%dT%H:%M:%S")
+            if self.add_snapshot_ts else None
+        )
+
         if self.account_id is not None:
             cabinet_id = self.account_id
             hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account_id)
@@ -77,7 +87,7 @@ class CianBuilderReportsOperator(BaseOperator):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         records = hook.get_builder_reports(self.date)
-        enriched = self._enrich(records, hook)
+        enriched = self._enrich(records, hook, snapshot_ts)
         self._write(enriched, output_path)
 
         return output_path
@@ -89,7 +99,7 @@ class CianBuilderReportsOperator(BaseOperator):
             return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
         return os.path.join(self.base_dir, safe_run_id, f"{self.date}.{ext}")
 
-    def _enrich(self, records: list[dict], hook: CianHook) -> list[dict]:
+    def _enrich(self, records: list[dict], hook: CianHook, snapshot_ts: str | None = None) -> list[dict]:
         unique_ids = {r["newbuildingId"] for r in records if "newbuildingId" in r}
         name_cache: dict[int, str] = {nid: hook.get_newbuilding_name(nid) for nid in unique_ids}
 
@@ -108,28 +118,29 @@ class CianBuilderReportsOperator(BaseOperator):
                 dt = dt.astimezone(_MSK)
             dt_str = dt.isoformat()
 
-            result.append(
-                {
-                    "id": record.get("id"),
-                    "newbuilding_id": nid,
-                    "newbuilding_name": name_cache.get(nid, ""),
-                    "date": self.date,
-                    "datetime": dt_str,
-                    "action_type": record.get("actionType"),
-                    "searcher_phone": record.get("searcherPhone"),
-                    "searcher_ct_phone": record.get("searcherCtPhone"),
-                    "builder_user_ct_phone": record.get("builderUserCtPhone"),
-                    "builder_user_phone": record.get("builderUserPhone"),
-                    "builder_sip_uri": record.get("builderSipUri"),
-                    "call_duration": record.get("callDuration"),
-                    "tariff_price": record.get("tariffPrice"),
-                    "auction_bet": record.get("auctionBet"),
-                    "cashback_spent": record.get("cashbackSpent"),
-                    "billing_price": billing_price,
-                    "has_claim": record.get("hasClaim"),
-                    "is_targeted": billing_price > 0,
-                }
-            )
+            row = {
+                "id": record.get("id"),
+                "newbuilding_id": nid,
+                "newbuilding_name": name_cache.get(nid, ""),
+                "date": self.date,
+                "datetime": dt_str,
+                "action_type": record.get("actionType"),
+                "searcher_phone": record.get("searcherPhone"),
+                "searcher_ct_phone": record.get("searcherCtPhone"),
+                "builder_user_ct_phone": record.get("builderUserCtPhone"),
+                "builder_user_phone": record.get("builderUserPhone"),
+                "builder_sip_uri": record.get("builderSipUri"),
+                "call_duration": record.get("callDuration"),
+                "tariff_price": record.get("tariffPrice"),
+                "auction_bet": record.get("auctionBet"),
+                "cashback_spent": record.get("cashbackSpent"),
+                "billing_price": billing_price,
+                "has_claim": record.get("hasClaim"),
+                "is_targeted": billing_price > 0,
+            }
+            if snapshot_ts and self.output_format == "json":
+                row[_SNAPSHOT_FIELD] = snapshot_ts
+            result.append(row)
         return result
 
     def _write(self, records: list[dict], path: str) -> None:

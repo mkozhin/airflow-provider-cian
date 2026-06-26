@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import tempfile
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,21 +13,28 @@ from airflow.hooks.base import BaseHook
 from airflow.models import Connection
 
 from airflow_provider_cian.hooks.cian import Account
-from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS
+from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS, _SNAPSHOT_FIELD
 
 
-def _make_operator(tmp_dir: str, output_format: str = "json") -> CianBuilderReportsOperator:
+def _make_operator(
+    tmp_dir: str,
+    output_format: str = "json",
+    add_snapshot_ts: bool = False,
+) -> CianBuilderReportsOperator:
     return CianBuilderReportsOperator(
         task_id="test_collect",
         cian_conn_id="cian_test",
         date="2024-01-15",
         base_dir=tmp_dir,
         output_format=output_format,
+        add_snapshot_ts=add_snapshot_ts,
     )
 
 
 def _make_context(run_id: str = "scheduled__2024-01-15T00:00:00+00:00") -> dict:
-    return {"run_id": run_id}
+    dag_run = MagicMock()
+    dag_run.start_date = datetime(2024, 1, 15, 12, 0, 0)
+    return {"run_id": run_id, "dag_run": dag_run}
 
 
 def _sample_records() -> list[dict]:
@@ -335,6 +343,67 @@ class TestExecute:
                    return_value=_make_conn_mock(login=None)):
             path = op.execute(_make_context("run-1"))
         assert path.startswith(custom_dir)
+
+
+class TestSnapshotTs:
+    """Tests for the add_snapshot_ts parameter."""
+
+    def _run_with_snapshot(self, tmp_path, output_format="json", records=None):
+        if records is None:
+            records = _sample_records()
+        op = _make_operator(str(tmp_path), output_format=output_format, add_snapshot_ts=True)
+        hook = _make_hook_mock(records, {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login=None)):
+            path = op.execute(_make_context("run-snap"))
+        return path
+
+    def test_snapshot_ts_present_in_every_json_record(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path)
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert len(records) == 2
+        for record in records:
+            assert _SNAPSHOT_FIELD in record
+
+    def test_snapshot_ts_value_equals_dag_run_start_date(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path)
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        # _make_context sets start_date = datetime(2024, 1, 15, 12, 0, 0)
+        assert records[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
+
+    def test_snapshot_ts_key_set_is_19_fields_when_flag_on(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path)
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert set(records[0].keys()) == set(_CSV_FIELDS) | {_SNAPSHOT_FIELD}
+
+    def test_snapshot_ts_absent_by_default(self, tmp_path):
+        op = _make_operator(str(tmp_path))  # add_snapshot_ts=False by default
+        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login=None)):
+            path = op.execute(_make_context("run-nosnap"))
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert _SNAPSHOT_FIELD not in records[0]
+        assert set(records[0].keys()) == set(_CSV_FIELDS)
+
+    def test_snapshot_ts_not_in_csv_even_when_flag_on(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path, output_format="csv")
+        with open(path, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert _SNAPSHOT_FIELD not in rows[0]
+        assert len(rows[0]) == 18
+
+    def test_empty_records_with_snapshot_ts_returns_str_path(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path, records=[])
+        assert isinstance(path, str)
+        assert os.path.exists(path)
 
 
 class TestValidation:
