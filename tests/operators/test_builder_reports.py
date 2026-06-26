@@ -202,14 +202,14 @@ class TestEnrich:
         assert set(enriched[0].keys()) == set(_CSV_FIELDS)
 
     def test_enrich_adds_snapshot_ts_when_provided(self, tmp_path):
-        op = _make_operator(str(tmp_path), output_format="json", add_snapshot_ts=True)
+        op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
         enriched = op._enrich(records, hook, snapshot_ts="2024-01-15T12:00:00")
         assert enriched[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
 
     def test_enrich_skips_snapshot_ts_when_none(self, tmp_path):
-        op = _make_operator(str(tmp_path), output_format="json")
+        op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
         enriched = op._enrich(records, hook, snapshot_ts=None)
