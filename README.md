@@ -68,6 +68,7 @@ The token source is controlled **solely by `account_id`** on the operator — no
 | `base_dir` | str | `/tmp/cian` | Base directory for output files |
 | `output_format` | str | `json` | `json` (JSONL) or `csv` |
 | `account_id` | str \| None | `None` | Cabinet ID for multi-account mode (matches `id` in Extra JSON) |
+| `add_snapshot_ts` | bool | `False` | Add `snapshot_ts` field (naive-UTC run start time, ISO 8601) to each JSON record. Ignored for `output_format='csv'`. |
 
 The operator returns the output file path via `return_value` XCom.
 
@@ -81,7 +82,9 @@ Output file path depends on how the cabinet ID is resolved:
 
 In single-account mode, setting `Login` on the connection acts as a cabinet ID for path isolation.
 
-### Output Schema (18 fields)
+### Output Schema
+
+Base schema (18 fields) — present in all records regardless of format:
 
 `id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
 `searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
@@ -91,6 +94,47 @@ In single-account mode, setting `Login` on the connection acts as a cabinet ID f
 - `date` — collection date (`YYYY-MM-DD`), always equals the operator's `date` parameter; safe for BigQuery date partitioning
 - `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` is computed: `billing_price > 0`.
+
+When `add_snapshot_ts=True` and `output_format='json'`, each record also contains a 19th field:
+
+- `snapshot_ts` — `dag_run.start_date` formatted as `YYYY-MM-DDTHH:MM:SS` (naive UTC, no timezone offset). All records within a single DAG run share the same value.
+
+### Snapshot Versioning
+
+The `billing_price` and `is_targeted` fields can change retroactively after initial collection (Cian may adjust billing post-factum). To track these changes over time, enable `add_snapshot_ts=True`:
+
+```python
+collect = CianBuilderReportsOperator.partial(
+    task_id="collect",
+    cian_conn_id="cian_default",
+    output_format="json",
+    add_snapshot_ts=True,
+).expand(date=dates)
+```
+
+Each JSON record will include `snapshot_ts` — the real wall-clock start time of the DAG run (`dag_run.start_date`, naive UTC). All records within the same run share one timestamp.
+
+To query the latest snapshot per call in ClickHouse:
+
+```sql
+SELECT *
+FROM cian_calls
+WHERE snapshot_ts = (
+    SELECT max(snapshot_ts) FROM cian_calls
+)
+```
+
+Or to build a history of `billing_price` changes:
+
+```sql
+SELECT id, billing_price, snapshot_ts
+FROM cian_calls
+ORDER BY id, snapshot_ts
+```
+
+> **BigQuery note:** the example `BQ_SCHEMA` in `examples/` is fixed at 18 fields. When `add_snapshot_ts=True`, either add a `snapshot_ts STRING` column to the schema or use `ignore_unknown_values=True` on the load job — otherwise BigQuery will reject records with the extra field.
+
+> **JSON only:** `add_snapshot_ts=True` has no effect when `output_format='csv'`. The CSV schema remains 18 fields.
 
 ## Multi-Account Support
 

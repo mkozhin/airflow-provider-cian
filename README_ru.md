@@ -68,6 +68,7 @@ pip install airflow-provider-cian
 | `base_dir` | str | `/tmp/cian` | Базовая директория для файлов |
 | `output_format` | str | `json` | `json` (JSONL) или `csv` |
 | `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON) |
+| `add_snapshot_ts` | bool | `False` | Добавить поле `snapshot_ts` (naive-UTC время старта прогона, ISO 8601) в каждую JSON-запись. Игнорируется при `output_format='csv'`. |
 
 Оператор возвращает путь к файлу через XCom (`return_value`).
 
@@ -81,7 +82,9 @@ pip install airflow-provider-cian
 
 В однокабинетном режиме поле `Login` подключения работает как ID кабинета для изоляции путей.
 
-### Схема данных (18 полей)
+### Схема данных
+
+Базовая схема (18 полей) — присутствует во всех записях независимо от формата вывода:
 
 `id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
 `searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
@@ -91,6 +94,47 @@ pip install airflow-provider-cian
 - `date` — дата сбора (`YYYY-MM-DD`), всегда равна параметру `date` оператора; безопасна для партиционирования BigQuery по дате
 - `datetime` — исходное datetime из API с явным московским смещением (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` вычисляется: `billing_price > 0`.
+
+При `add_snapshot_ts=True` и `output_format='json'` каждая запись также содержит 19-е поле:
+
+- `snapshot_ts` — `dag_run.start_date` в формате `YYYY-MM-DDTHH:MM:SS` (naive UTC, без смещения). Все записи одного прогона имеют одно и то же значение.
+
+### Версионирование снапшотов
+
+Поля `billing_price` и `is_targeted` могут изменяться задним числом после первичной выгрузки (Cian может доначислить или снять бюджет позже). Чтобы отслеживать изменения во времени, включите `add_snapshot_ts=True`:
+
+```python
+collect = CianBuilderReportsOperator.partial(
+    task_id="collect",
+    cian_conn_id="cian_default",
+    output_format="json",
+    add_snapshot_ts=True,
+).expand(date=dates)
+```
+
+В каждую JSON-запись будет добавлено поле `snapshot_ts` — реальное wall-clock время старта прогона DAG (`dag_run.start_date`, naive UTC). Все записи одного прогона имеют одну метку.
+
+Запрос последнего снапшота в ClickHouse:
+
+```sql
+SELECT *
+FROM cian_calls
+WHERE snapshot_ts = (
+    SELECT max(snapshot_ts) FROM cian_calls
+)
+```
+
+Или история изменений `billing_price`:
+
+```sql
+SELECT id, billing_price, snapshot_ts
+FROM cian_calls
+ORDER BY id, snapshot_ts
+```
+
+> **BigQuery:** схема `BQ_SCHEMA` в `examples/` фиксирована на 18 полях. При `add_snapshot_ts=True` потребуется либо добавить колонку `snapshot_ts STRING` в схему, либо использовать `ignore_unknown_values=True` в задании загрузки — иначе BigQuery отклонит записи с дополнительным полем.
+
+> **Только для JSON:** `add_snapshot_ts=True` не влияет на вывод в CSV. Схема CSV остаётся 18-польной.
 
 ## Поддержка нескольких кабинетов
 
