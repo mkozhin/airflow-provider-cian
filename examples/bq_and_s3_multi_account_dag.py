@@ -31,7 +31,7 @@ collect (×N дат) → upload_gcs → load_bq
 {"accounts": [{"id": "123", "token": "abc..."}, {"id": "456", "token": "def..."}]}
 ```
 
-При пустом или отсутствующем коннекторе (`get_accounts` возвращает `[]`):
+При пустом или отсутствующем коннекторе (`list_accounts` возвращает `[]`):
 DAG импортируется без TaskGroup-ов и без ошибок.
 
 ## Параллелизм
@@ -53,7 +53,7 @@ from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
 
-from airflow_provider_cian.hooks.cian import Account, get_accounts
+from airflow_provider_cian.accounts import Account, list_accounts
 from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator
 
 # ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ S3_PREFIX    = "raw/placements/price/cian/new"
 POOL             = "cian_pool"
 MAX_ACTIVE_TASKS = 5
 
-# ── BQ schema (18 полей) ──────────────────────────────────────────────────────
+# ── BQ schema (19 полей, включая snapshot_ts) ────────────────────────────────
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},
@@ -96,6 +96,7 @@ BQ_SCHEMA = [
     {"name": "billing_price",         "type": "FLOAT",     "mode": "NULLABLE"},
     {"name": "has_claim",             "type": "BOOLEAN",   "mode": "NULLABLE"},
     {"name": "is_targeted",           "type": "BOOLEAN",   "mode": "NULLABLE"},
+    {"name": "snapshot_ts",           "type": "STRING",    "mode": "NULLABLE"},
 ]
 
 # ── default_args ──────────────────────────────────────────────────────────────
@@ -219,6 +220,7 @@ def cian_to_bq_and_s3_multi_account():
                 base_dir=BASE_DIR,
                 output_format="json",
                 account_id=cab_id,
+                add_snapshot_ts=True,
             )
             upload_gcs = LocalFilesystemToGCSOperator.partial(
                 task_id="upload_gcs",
@@ -254,7 +256,7 @@ def cian_to_bq_and_s3_multi_account():
             bucket_ready >> gcs_done >> bq_done
             [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
 
-    accounts     = get_accounts(CIAN_CONN_ID)
+    accounts     = list_accounts(CIAN_CONN_ID)
     dates        = get_dates()
     bucket_ready = ensure_gcs_bucket()
 

@@ -3,30 +3,36 @@ from __future__ import annotations
 import csv
 import json
 import os
-import tempfile
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
 from airflow.models import Connection
 
-from airflow_provider_cian.hooks.cian import Account
-from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS
+from airflow_provider_cian.accounts import Account
+from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS, _SNAPSHOT_FIELD
 
 
-def _make_operator(tmp_dir: str, output_format: str = "json") -> CianBuilderReportsOperator:
+def _make_operator(
+    tmp_dir: str,
+    output_format: str = "json",
+    add_snapshot_ts: bool = False,
+) -> CianBuilderReportsOperator:
     return CianBuilderReportsOperator(
         task_id="test_collect",
         cian_conn_id="cian_test",
         date="2024-01-15",
         base_dir=tmp_dir,
         output_format=output_format,
+        add_snapshot_ts=add_snapshot_ts,
     )
 
 
 def _make_context(run_id: str = "scheduled__2024-01-15T00:00:00+00:00") -> dict:
-    return {"run_id": run_id}
+    dag_run = MagicMock()
+    dag_run.start_date = datetime(2024, 1, 15, 12, 0, 0)
+    return {"run_id": run_id, "dag_run": dag_run}
 
 
 def _sample_records() -> list[dict]:
@@ -193,6 +199,20 @@ class TestEnrich:
         enriched = op._enrich(records, hook)
         assert set(enriched[0].keys()) == set(_CSV_FIELDS)
 
+    def test_enrich_adds_snapshot_ts_when_provided(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, snapshot_ts="2024-01-15T12:00:00")
+        assert enriched[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
+
+    def test_enrich_skips_snapshot_ts_when_none(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, snapshot_ts=None)
+        assert _SNAPSHOT_FIELD not in enriched[0]
+
 
 class TestWrite:
     def test_json_creates_jsonl_file(self, tmp_path):
@@ -262,7 +282,7 @@ class TestExecute:
         op = _make_operator(str(tmp_path), output_format)
         hook = _make_hook_mock(records, {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=_make_conn_mock(login=None)):
             path = op.execute(_make_context(run_id))
         return path, hook
@@ -288,7 +308,7 @@ class TestExecute:
         hook = _make_hook_mock([], {})
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=_make_conn_mock(login=None)):
             path1 = op.execute(ctx)
 
@@ -296,7 +316,7 @@ class TestExecute:
             f.write("old content")
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=_make_conn_mock(login=None)):
             path2 = op.execute(ctx)
 
@@ -331,10 +351,64 @@ class TestExecute:
         )
         hook = _make_hook_mock([], {})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=_make_conn_mock(login=None)):
             path = op.execute(_make_context("run-1"))
         assert path.startswith(custom_dir)
+
+
+class TestSnapshotTs:
+    """Tests for the add_snapshot_ts parameter."""
+
+    def _run_with_snapshot(self, tmp_path, output_format="json", records=None):
+        if records is None:
+            records = _sample_records()
+        op = _make_operator(str(tmp_path), output_format=output_format, add_snapshot_ts=True)
+        hook = _make_hook_mock(records, {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login=None)):
+            path = op.execute(_make_context("run-snap"))
+        return path
+
+    def test_snapshot_ts_json_records(self, tmp_path):
+        """snapshot_ts is present in every record, has the correct value, and key set is exactly 19."""
+        path = self._run_with_snapshot(tmp_path)
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert len(records) == 2
+        # _make_context sets start_date = datetime(2024, 1, 15, 12, 0, 0)
+        expected_ts = "2024-01-15T12:00:00"
+        for record in records:
+            assert _SNAPSHOT_FIELD in record
+            assert record[_SNAPSHOT_FIELD] == expected_ts
+            assert set(record.keys()) == set(_CSV_FIELDS) | {_SNAPSHOT_FIELD}
+
+    def test_snapshot_ts_absent_by_default(self, tmp_path):
+        op = _make_operator(str(tmp_path))  # add_snapshot_ts=False by default
+        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login=None)):
+            path = op.execute(_make_context("run-nosnap"))
+        with open(path, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        assert _SNAPSHOT_FIELD not in records[0]
+        assert set(records[0].keys()) == set(_CSV_FIELDS)
+
+    def test_snapshot_ts_not_in_csv_even_when_flag_on(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path, output_format="csv")
+        with open(path, encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+            rows = list(reader)
+        assert fieldnames == _CSV_FIELDS
+        assert len(rows[0]) == 18
+
+    def test_empty_records_with_snapshot_ts_returns_str_path(self, tmp_path):
+        path = self._run_with_snapshot(tmp_path, records=[])
+        assert isinstance(path, str)
+        assert os.path.exists(path)
 
 
 class TestValidation:
@@ -373,7 +447,7 @@ class TestBuildPathWithCabinetId:
 
 
 class TestExecuteWithAccount:
-    def _run_with_account_id(self, tmp_path, account_id, conn_login=None, records=None):
+    def _run_with_account_id(self, tmp_path, account_id, records=None):
         if records is None:
             records = _sample_records()
         op = CianBuilderReportsOperator(
@@ -385,12 +459,9 @@ class TestExecuteWithAccount:
             account_id=account_id,
         )
         hook = _make_hook_mock(records, {10: "ЖК Тест"})
-        mock_conn = MagicMock(spec=Connection)
-        mock_conn.login = conn_login
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook:
             MockHook.return_value = hook
-            MockHook.get_connection.return_value = mock_conn
             path = op.execute(_make_context("run-1"))
 
         return path, MockHook
@@ -426,7 +497,7 @@ class TestExecuteWithAccount:
         mock_conn = _make_conn_mock(login="msk")
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=mock_conn):
             path = op.execute(_make_context("run-1"))
 
@@ -445,7 +516,7 @@ class TestExecuteWithAccount:
         mock_conn = _make_conn_mock(login=None)
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=mock_conn):
             path = op.execute(_make_context("run-1"))
 
@@ -454,6 +525,24 @@ class TestExecuteWithAccount:
         parts = rel.split(os.sep)
         # Exactly 2 parts: <run_id_sanitized>/<date>.json
         assert len(parts) == 2, f"Expected 2 path parts, got {parts}"
+
+    def test_execute_multi_mode_does_not_read_connection(self, tmp_path):
+        """In multi-mode (account_id set), resolve_cabinet_id must not call get_connection."""
+        op = CianBuilderReportsOperator(
+            task_id="test_collect",
+            cian_conn_id="cian_test",
+            date="2024-01-15",
+            base_dir=str(tmp_path),
+            output_format="json",
+            account_id="some_account",
+        )
+        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
+
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection") as mock_get_conn:
+            op.execute(_make_context("run-1"))
+
+        mock_get_conn.assert_not_called()
 
     def test_account_id_takes_priority_over_conn_login(self, tmp_path):
         """When account_id is set, it is used as cabinet_id even if conn.login is present."""
@@ -468,9 +557,7 @@ class TestExecuteWithAccount:
         hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
         mock_conn = _make_conn_mock(login="some_login")
 
-        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook, \
-             patch("airflow_provider_cian.operators.builder_reports.BaseHook.get_connection",
-                   return_value=mock_conn):
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook:
             MockHook.return_value = hook
             path = op.execute(_make_context("run-1"))
 
