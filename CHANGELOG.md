@@ -1,11 +1,8 @@
 # Changelog
 
-## [Unreleased]
-
-- **BREAKING**: `Account` (dataclass) and `list_accounts` (formerly `get_accounts`) moved to `airflow_provider_cian.accounts`; removed from `airflow_provider_cian.hooks` and `airflow_provider_cian.hooks.cian`. Update imports: `from airflow_provider_cian.accounts import Account, list_accounts` (these are standalone symbols, not part of `CianHook`; see [0.2.0] entry)
-
 ## [0.3.0] - 2026-06-26
 
+- **BREAKING**: `Account` (dataclass) and `list_accounts` (formerly `get_accounts`) moved to `airflow_provider_cian.accounts`; removed from `airflow_provider_cian.hooks` and `airflow_provider_cian.hooks.cian`. Update imports: `from airflow_provider_cian.accounts import Account, list_accounts` (these are standalone symbols, not part of `CianHook`; see [0.2.0] entry)
 - Feat: `add_snapshot_ts` parameter in `CianBuilderReportsOperator` (default `False`); when enabled, adds a `snapshot_ts` field (`dag_run.start_date` as `YYYY-MM-DDTHH:MM:SS`, naive UTC) to each JSON record — allows tracking changes to `billing_price`/`is_targeted` over time across repeated collections of the same dates; fully backward-compatible; ignored for `output_format='csv'`
 
 ## [0.2.0] - 2026-06-09
