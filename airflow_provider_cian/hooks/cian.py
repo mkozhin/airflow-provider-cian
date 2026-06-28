@@ -1,70 +1,20 @@
 from __future__ import annotations
 
 import logging
-import re
 import time
-from dataclasses import dataclass
 from datetime import date
 
 import requests
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 
+from airflow_provider_cian.accounts import resolve_token
+
 log = logging.getLogger(__name__)
 
 
 class CianNotFoundError(AirflowException):
     """Raised when the Cian API responds with a 'not found' status code."""
-
-
-@dataclass
-class Account:
-    """Represents a Cian account (cabinet). The `id` is sanitized on creation."""
-
-    id: str
-
-    def __post_init__(self) -> None:
-        self.id = re.sub(r"[^\w-]", "_", self.id)
-
-
-def get_accounts(conn_id: str) -> list[Account]:
-    """Read accounts from the Airflow connection extra field.
-
-    Returns a list of Account objects (sanitized ids). Returns [] on any error
-    (missing connection, missing key, etc.) — callers must not raise.
-
-    Duplicate sanitized ids are deduplicated: only the first account is kept
-    and a WARNING is logged.
-    """
-    try:
-        conn = BaseHook.get_connection(conn_id)
-        raw_accounts = conn.extra_dejson.get("accounts", [])
-        accounts: list[Account] = []
-        seen: set[str] = set()
-        for entry in raw_accounts:
-            if "id" not in entry:
-                log.warning("Skipping account entry missing required 'id' key: %r", entry)
-                continue
-            original_id = entry["id"]
-            acc = Account(id=original_id)
-            if acc.id in seen:
-                log.warning(
-                    "Duplicate account id after sanitization: %r becomes %r. "
-                    "Keeping the first, skipping the second.",
-                    original_id,
-                    acc.id,
-                )
-            else:
-                seen.add(acc.id)
-                accounts.append(acc)
-        return accounts
-    except Exception:
-        log.warning(
-            "Could not load accounts from connection %r. Returning empty list.",
-            conn_id,
-            exc_info=True,
-        )
-        return []
 
 
 class CianHook(BaseHook):
@@ -108,33 +58,7 @@ class CianHook(BaseHook):
     def _make_request(self, path: str, params: dict, not_found_codes: tuple[int, ...] = ()) -> dict:
         conn = self.get_connection(self.cian_conn_id)
         base_url = conn.host.rstrip("/")
-
-        if self.account_id is not None:
-            raw_accounts = conn.extra_dejson.get("accounts", [])
-            matched_token: str | None = None
-            for entry in raw_accounts:
-                if "id" not in entry:
-                    continue
-                if Account(id=entry["id"]).id == self.account_id:
-                    matched_token = entry.get("token")
-                    if not matched_token:
-                        raise AirflowException(
-                            f"Account id={self.account_id!r} found in connection "
-                            f"{self.cian_conn_id!r} but is missing required 'token' field"
-                        )
-                    break
-            if not matched_token:
-                raise AirflowException(
-                    f"Account id={self.account_id!r} not found in connection {self.cian_conn_id!r} extra.accounts"
-                )
-            token = matched_token
-        else:
-            token = conn.password
-            if not token:
-                raise AirflowException(
-                    f"Connection {self.cian_conn_id!r} has no password (token) set "
-                    "and no account_id was provided."
-                )
+        token = resolve_token(conn, self.account_id)
 
         headers = {"Authorization": f"Bearer {token}"}
         url = f"{base_url}{path}"

@@ -138,12 +138,12 @@ ORDER BY id, snapshot_ts
 
 ## Multi-Account Support
 
-`get_accounts()` reads the connection Extra JSON and returns a list of `Account` objects. Use it at DAG parse time to build one `TaskGroup` per cabinet:
+`list_accounts()` reads the connection Extra JSON and returns a list of `Account` objects. Use it at DAG parse time to build one `TaskGroup` per cabinet:
 
 ```python
-from airflow_provider_cian.hooks.cian import Account, get_accounts
+from airflow_provider_cian.accounts import Account, list_accounts
 
-accounts = get_accounts("cian_default")  # returns [] if no accounts configured
+accounts = list_accounts("cian_default")  # returns [] if no accounts configured
 for account in accounts:
     with TaskGroup(group_id=f"cabinet_{account.id}"):
         CianBuilderReportsOperator.partial(
@@ -155,6 +155,13 @@ for account in accounts:
 ```
 
 See `examples/bq_and_s3_multi_account_dag.py` for a full working example with GCS, BigQuery and S3 uploads.
+
+### Internal resolution functions
+
+`airflow_provider_cian.accounts` also exposes two lower-level helpers used by the hook and operator. DAG authors typically do not need these directly:
+
+- `resolve_cabinet_id(conn_id, account_id)` — returns the cabinet id for an operation. In multi-account mode (`account_id` is set) it returns `account_id` immediately without reading the connection. In single-account mode it reads `conn.login` lazily.
+- `resolve_token(conn, account_id)` — returns the authentication token. In multi-account mode it finds the first matching entry in `conn.extra.accounts`. In single-account mode it returns `conn.password`. Raises `AirflowException` when the token cannot be resolved.
 
 ## Example DAG
 

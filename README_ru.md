@@ -138,12 +138,12 @@ ORDER BY id, snapshot_ts
 
 ## Поддержка нескольких кабинетов
 
-`get_accounts()` читает Extra-поле подключения и возвращает список объектов `Account`. Используйте его на этапе парсинга DAG, чтобы создать по одному `TaskGroup` на каждый кабинет:
+`list_accounts()` читает Extra-поле подключения и возвращает список объектов `Account`. Используйте его на этапе парсинга DAG, чтобы создать по одному `TaskGroup` на каждый кабинет:
 
 ```python
-from airflow_provider_cian.hooks.cian import Account, get_accounts
+from airflow_provider_cian.accounts import Account, list_accounts
 
-accounts = get_accounts("cian_default")  # вернёт [], если кабинеты не настроены
+accounts = list_accounts("cian_default")  # вернёт [], если кабинеты не настроены
 for account in accounts:
     with TaskGroup(group_id=f"cabinet_{account.id}"):
         CianBuilderReportsOperator.partial(
@@ -155,6 +155,13 @@ for account in accounts:
 ```
 
 Полный рабочий пример с выгрузкой в GCS, BigQuery и S3 — в файле `examples/bq_and_s3_multi_account_dag.py`.
+
+### Вспомогательные функции резолюции
+
+`airflow_provider_cian.accounts` также содержит две низкоуровневые функции, которые используются хуком и оператором. Как правило, авторам DAG они не нужны напрямую:
+
+- `resolve_cabinet_id(conn_id, account_id)` — возвращает cabinet id для операции. В режиме нескольких кабинетов (`account_id` задан) возвращает `account_id` сразу, без чтения подключения. В одиночном режиме лениво читает `conn.login`.
+- `resolve_token(conn, account_id)` — возвращает токен аутентификации. В режиме нескольких кабинетов ищет первое совпадение в `conn.extra.accounts`. В одиночном режиме возвращает `conn.password`. Пробрасывает `AirflowException`, если токен не удалось получить.
 
 ## Пример DAG
 

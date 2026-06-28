@@ -31,7 +31,7 @@ collect (×N дат) → upload_gcs → load_bq
 {"accounts": [{"id": "123", "token": "abc..."}, {"id": "456", "token": "def..."}]}
 ```
 
-При пустом или отсутствующем коннекторе (`get_accounts` возвращает `[]`):
+При пустом или отсутствующем коннекторе (`list_accounts` возвращает `[]`):
 DAG импортируется без TaskGroup-ов и без ошибок.
 
 ## Параллелизм
@@ -53,7 +53,7 @@ from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
 
-from airflow_provider_cian.hooks.cian import Account, get_accounts
+from airflow_provider_cian.accounts import Account, list_accounts
 from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator
 
 # ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ def cian_to_bq_and_s3_multi_account():
             bucket_ready >> gcs_done >> bq_done
             [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
 
-    accounts     = get_accounts(CIAN_CONN_ID)
+    accounts     = list_accounts(CIAN_CONN_ID)
     dates        = get_dates()
     bucket_ready = ensure_gcs_bucket()
 

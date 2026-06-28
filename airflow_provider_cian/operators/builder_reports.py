@@ -7,10 +7,10 @@ import re
 from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
 from airflow.models import BaseOperator
 
-from airflow_provider_cian.hooks.cian import Account, CianHook
+from airflow_provider_cian.accounts import resolve_cabinet_id
+from airflow_provider_cian.hooks.cian import CianHook
 
 _MSK = timezone(timedelta(hours=3))
 _OUTPUT_FORMATS = ("json", "csv")
@@ -71,13 +71,8 @@ class CianBuilderReportsOperator(BaseOperator):
             if self.add_snapshot_ts and self.output_format == "json" else None
         )
 
-        if self.account_id is not None:
-            cabinet_id = self.account_id
-            hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account_id)
-        else:
-            conn = BaseHook.get_connection(self.cian_conn_id)
-            cabinet_id = Account(id=conn.login).id if conn.login else None
-            hook = CianHook(cian_conn_id=self.cian_conn_id)
+        cabinet_id = resolve_cabinet_id(self.cian_conn_id, self.account_id)
+        hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account_id)
 
         output_path = self._build_path(context["run_id"], cabinet_id)
 

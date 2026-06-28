@@ -7,15 +7,15 @@ import sys
 import types
 from unittest.mock import MagicMock, patch
 
-from airflow_provider_cian.hooks.cian import Account
+from airflow_provider_cian.accounts import Account
 
 _MOD_NAME = "examples.bq_and_s3_multi_account_dag"
-# The DAG module calls get_accounts at import time.
-# Patching the source (airflow_provider_cian.hooks.cian.get_accounts) works for fresh imports
+# The DAG module calls list_accounts at import time.
+# Patching the source (airflow_provider_cian.accounts.list_accounts) works for fresh imports
 # because 'from X import f' binds f from X at import time, so patching X.f before importlib.import_module
 # causes the module to bind the mock. Patching the DAG module's own namespace would only work
 # after the module is already loaded.
-_PATCH_TARGET = "airflow_provider_cian.hooks.cian.get_accounts"
+_PATCH_TARGET = "airflow_provider_cian.accounts.list_accounts"
 
 # Provider sub-packages that are not installed in the test environment.
 # NOTE: do NOT include "airflow.providers" — it is a real namespace package.
@@ -76,7 +76,7 @@ def _make_provider_stubs() -> dict[str, types.ModuleType]:
 
 def _import_dag_module(mock_accounts: list[Account]):
     """Import (or re-import) the multi-account DAG module with mocked providers
-    and a mocked get_accounts function.
+    and a mocked list_accounts function.
 
     Removes the cached module so that module-level code re-runs each time.
     """
@@ -100,21 +100,22 @@ class TestMultiAccountDagImport:
     """Smoke tests: DAG imports without errors."""
 
     def test_dag_imports_with_empty_accounts(self):
-        """DAG imports successfully when get_accounts returns []."""
+        """DAG imports successfully when list_accounts returns []."""
         mod = _import_dag_module([])
         assert hasattr(mod, "cian_to_bq_and_s3_multi_account")
 
     def test_dag_imports_with_two_accounts(self):
-        """DAG imports successfully when get_accounts returns two accounts."""
+        """DAG imports successfully when list_accounts returns two accounts."""
         accounts = [Account(id="aa"), Account(id="bb")]
         mod = _import_dag_module(accounts)
         assert hasattr(mod, "cian_to_bq_and_s3_multi_account")
 
     def test_dag_imports_does_not_raise_on_missing_connection(self):
-        """DAG import must not raise even if get_accounts propagates AirflowNotFoundException.
+        """DAG import must not raise when the connection is missing.
 
-        Patches the DAG module's own get_accounts to raise, verifying that the
-        module-level exception handling produces an empty accounts list gracefully.
+        list_accounts is defensive: it catches AirflowNotFoundException internally
+        and returns []. The DAG therefore imports successfully without any try/except
+        at the DAG level.
         """
         from airflow.exceptions import AirflowNotFoundException
 
@@ -123,23 +124,19 @@ class TestMultiAccountDagImport:
         previously_absent = [k for k in stubs if k not in sys.modules]
         sys.modules.update(stubs)
         try:
-            with patch(_PATCH_TARGET, side_effect=AirflowNotFoundException("no conn")):
-                # get_accounts raises — the DAG module should handle it by catching at import.
-                # In our implementation get_accounts itself swallows exceptions and returns [].
-                # But if it's patched to raise at the module level, we want the DAG to not crash.
-                try:
-                    importlib.import_module(_MOD_NAME)
-                except Exception:
-                    pass
+            # Simulate a missing connection at the BaseHook level.
+            # list_accounts catches AirflowNotFoundException and returns [].
+            with patch(
+                "airflow.hooks.base.BaseHook.get_connection",
+                side_effect=AirflowNotFoundException("no conn"),
+            ):
+                mod = importlib.import_module(_MOD_NAME)
         finally:
             for k in previously_absent:
                 sys.modules.pop(k, None)
             sys.modules.pop(_MOD_NAME, None)
 
-        # Whether the module raised or returned empty accounts, the key invariant:
-        # a second import with an empty list always succeeds
-        mod2 = _import_dag_module([])
-        assert mod2.cian_to_bq_and_s3_multi_account is not None
+        assert hasattr(mod, "cian_to_bq_and_s3_multi_account")
 
 
 def _get_dag_obj(mod):

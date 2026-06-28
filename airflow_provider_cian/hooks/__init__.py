@@ -1,3 +1,3 @@
-from airflow_provider_cian.hooks.cian import Account, CianHook, CianNotFoundError, get_accounts
+from airflow_provider_cian.hooks.cian import CianHook, CianNotFoundError
 
-__all__ = ["Account", "CianHook", "CianNotFoundError", "get_accounts"]
+__all__ = ["CianHook", "CianNotFoundError"]
