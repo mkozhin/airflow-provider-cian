@@ -5,7 +5,6 @@ uv.lock
 __pycache__
 **/.env
 .env
-/CLAUDE.md
 /PLAN.md
 .DS_Store
 
@@ -17,6 +16,3 @@ build/
 # Generated version file (setuptools-scm)
 airflow_provider_cian/_version.py
 /.claude/
-/docs/plans/
-/docs/adr/
-/CONTEXT.md
