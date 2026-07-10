@@ -553,16 +553,16 @@ Airflow).
 
 ### Task 11: Verify acceptance criteria
 
-- [ ] verify all requirements from Overview are implemented
-- [ ] edge case: пустой день — файла нет и сам этот день не создаёт директорию запуска (существующая директория, созданная соседними непустыми датами, — это норма), XCom не записан
-- [ ] edge case: полностью пустой период в v1/multi-account — агрегаторы на `None` → `[]` (структурно mapped-таск развернулся бы в ноль инстансов → `skipped`); живой прогон вынесен в Post-Completion
-- [ ] edge case: полностью пустой период в v2 — `process_date` в `success` с `None`, `skipped` нет вовсе
-- [ ] edge case: ретрай дня, за который данные исчезли — устаревший файл удалён
-- [ ] edge case: ответ 200 без `result.reports` (включая тело-список и `null`) → `AirflowException`
-- [ ] edge case: смешанный период — заливка идёт только за дни с данными, даты не смещены
-- [ ] `grep -rn "zip(paths" examples/` пуст — смещение дат невозможно по конструкции
-- [ ] `grep -rn "resolve_token" airflow_provider_cian/operators/` пуст — инвариант ADR-0002 не нарушен
-- [ ] verify test coverage meets project standard (новые ветки покрыты)
+- [x] verify all requirements from Overview are implemented — подтверждено: хук валидирует форму ответа (`hooks/cian.py`), оператор возвращает `dict | None` без файла за пустой день (`operators/builder_reports.py`), все четыре примера DAG переведены на самоописывающие items; 197 тестов зелёные
+- [x] edge case: пустой день — файла нет и сам этот день не создаёт директорию запуска (существующая директория, созданная соседними непустыми датами, — это норма), XCom не записан — покрыто `TestExecuteEmptyDay::test_empty_day_json_returns_none_no_file`, `test_empty_day_csv_returns_none_no_file`, `test_empty_day_creates_no_run_directory`, `test_empty_day_creates_no_run_directory_but_keeps_sibling` (`tests/operators/test_builder_reports.py:601-642`); отсутствие XCom обеспечивается возвратом `None` (штатная семантика Airflow, зафиксирована в Context)
+- [x] edge case: полностью пустой период в v1/multi-account — агрегаторы на `None` → `[]` (структурно mapped-таск развернулся бы в ноль инстансов → `skipped`); живой прогон вынесен в Post-Completion — покрыто `tests/test_example_dag_v1.py:78,83,88`, `tests/test_example_dag_v1_structure.py:208,213,218`, `tests/test_example_dag_multi_account.py:160,165,170`
+- [x] edge case: полностью пустой период в v2 — `process_date` в `success` с `None`, `skipped` нет вовсе — покрыто `tests/test_example_dag_v2.py::test_empty_day_skips_all_uploads` (result is None, ни один из GCS/BQ/S3 хуков не вызван)
+- [x] edge case: ретрай дня, за который данные исчезли — устаревший файл удалён — покрыто `TestExecuteEmptyDay::test_stale_file_removed_even_when_no_data` (`tests/operators/test_builder_reports.py:644`)
+- [x] edge case: ответ 200 без `result.reports` (включая тело-список и `null`) → `AirflowException` — покрыто `tests/hooks/test_cian.py`: `test_missing_result_key_raises:77`, `test_reports_not_a_list_raises:85`, `test_errors_body_with_200_raises:93`, `test_top_level_list_body_raises:101`, `test_top_level_null_body_raises:109`
+- [x] edge case: смешанный период — заливка идёт только за дни с данными, даты не смещены — покрыто `tests/test_example_dag_v1.py::test_make_gcs_params_maps_each_item:103` и `test_make_s3_params_dates_not_shifted:113`, `tests/test_example_dag_v1_structure.py::test_s3_params_dates_not_shifted:176`, `tests/test_example_dag_multi_account.py::test_make_s3_params_contains_cabinet_id_and_dates_not_shifted:195`
+- [x] `grep -rn "zip(paths" examples/` пуст — смещение дат невозможно по конструкции — подтверждено: grep возвращает пусто (exit 1, нет совпадений)
+- [x] `grep -rn "resolve_token" airflow_provider_cian/operators/` пуст — инвариант ADR-0002 не нарушен — подтверждено: grep возвращает пусто (exit 1, нет совпадений)
+- [x] verify test coverage meets project standard (новые ветки покрыты) — pytest-cov/coverage в окружении не установлены (pip install запрещён), поэтому покрытие проверено сопоставлением веток с тестами: новая ветка валидации хука (`isinstance`+`raise`) — 5 тестов выше; ветка `if not records: return None` — `TestExecuteEmptyDay`; ветка удаления устаревшего файла — `test_stale_file_removed_even_when_no_data`; `items = list(items or [])` во всех агрегаторах — `*_params(None) == []` тесты. Все новые ветки имеют выделенный тест; 197/197 зелёные
 
 ### Task 12: [Final] ADR-0003 и завершение
 
