@@ -70,7 +70,23 @@ The token source is controlled **solely by `account_id`** on the operator — no
 | `account_id` | str \| None | `None` | Cabinet ID for multi-account mode (matches `id` in Extra JSON) |
 | `add_snapshot_ts` | bool | `False` | Add `snapshot_ts` field (naive-UTC run start time, ISO 8601) to each JSON record. Ignored for `output_format='csv'`. |
 
-The operator returns the output file path via `return_value` XCom.
+### Return value (`execute` contract)
+
+For a day **with data**, the operator writes the file and returns a self-describing dict, pushed to the `return_value` XCom:
+
+```python
+{"date": "2026-07-01", "path": "/tmp/cian/<run_id>/2026-07-01.json"}
+```
+
+For an **empty day** (Cian returned `reports: []`), the operator writes **no file** and returns `None`. Airflow does not push an XCom for `None`, so an empty day simply drops out of the `collect` mapped task's result list — no downstream mapped instance is created for it.
+
+> **Breaking change (unreleased):** `execute()` previously returned the path as a plain `str`. It now returns `dict | None`. DAGs (or XCom consumers) that read the `collect` result as a string must unwrap `item["path"]`.
+
+**DAG author warning — `items or []`:** any aggregator that consumes the collected list MUST start with `items = list(items or [])`. When the **entire period** is empty, no mapped instance writes an XCom and Airflow hands the aggregator `None`, not `[]` — a naive `len(items)` would raise `TypeError`.
+
+**Fully empty period.** In the v1 and multi-account DAGs (`bq_and_s3_dag.py`, `bq_and_s3_multi_account_dag.py`), which have separate mapped upload/load tasks, the aggregators return `[]`, those mapped tasks expand to **zero instances** and are marked `skipped`, and the `dag_run` still succeeds. In the v2 DAG (`bq_and_s3_dag_v2.py`) the uploads happen inside a single `process_date` task, so an empty day is just `process_date` returning `None` in state `success` — there is **no** `skipped` task, even when the whole period is empty.
+
+**Broken API response.** A 200 response without `result.reports` (or with a non-list there) now **fails** the task with `AirflowException` instead of being silently treated as an empty day.
 
 Output file path depends on how the cabinet ID is resolved:
 
@@ -186,16 +202,32 @@ def cian_reports():
         cian_conn_id="cian_default",
         base_dir="/tmp/cian",
         output_format="json",
-    ).expand(date=dates)
+    )
+    collected = collect.expand(date=dates).output  # list of {"date", "path"} — only days with data
 
-    # Add upload here, e.g. LocalFilesystemToS3Operator.partial(...).expand(filename=collect)
+    # Route uploads through an aggregator that turns collected items into expand kwargs.
+    # `items or []` is mandatory: for a fully empty period Airflow hands the aggregator
+    # None (no XCom was written), not [].
+    @task
+    def to_s3_params(items):
+        items = list(items or [])
+        return [
+            {"filename": it["path"], "dest_key": f"cian/{it['date']}.json"}
+            for it in items
+        ]
+
+    # LocalFilesystemToS3Operator.partial(...).expand_kwargs(to_s3_params(collected))
 
     def cleanup(ti, **ctx):
-        for path in (ti.xcom_pull(task_ids="collect") or []):
+        items = ti.xcom_pull(task_ids="collect")
+        if isinstance(items, dict):          # a single mapped instance returns a bare dict
+            items = [items]
+        for item in (items or []):           # None when the whole period is empty
+            path = item["path"]
             if path and os.path.exists(path):
                 os.remove(path)
 
-    collect >> PythonOperator(task_id="cleanup", python_callable=cleanup, trigger_rule="all_done")
+    collected >> PythonOperator(task_id="cleanup", python_callable=cleanup, trigger_rule="all_done")
 
 cian_reports()
 ```

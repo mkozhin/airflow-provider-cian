@@ -70,7 +70,23 @@ pip install airflow-provider-cian
 | `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON) |
 | `add_snapshot_ts` | bool | `False` | Добавить поле `snapshot_ts` (naive-UTC время старта прогона, ISO 8601) в каждую JSON-запись. Игнорируется при `output_format='csv'`. |
 
-Оператор возвращает путь к файлу через XCom (`return_value`).
+### Возвращаемое значение (контракт `execute`)
+
+За день **с данными** оператор пишет файл и возвращает самоописывающий dict, который кладётся в XCom `return_value`:
+
+```python
+{"date": "2026-07-01", "path": "/tmp/cian/<run_id>/2026-07-01.json"}
+```
+
+За **пустой день** (Cian вернул `reports: []`) оператор **не создаёт файл** и возвращает `None`. Airflow не пишет XCom для `None`, поэтому пустой день просто выпадает из списка результатов mapped-таска `collect` — ни одного downstream mapped-инстанса за него не создаётся.
+
+> **Ломающее изменение (unreleased):** раньше `execute()` возвращал путь как обычную строку `str`. Теперь возвращается `dict | None`. DAG-и (и потребители XCom), читавшие результат `collect` как строку, должны разворачивать `item["path"]`.
+
+**Предупреждение автору DAG — `items or []`:** любой агрегатор, потребляющий собранный список, ОБЯЗАН начинаться с `items = list(items or [])`. Когда пуст **весь период**, ни один mapped-инстанс не пишет XCom, и Airflow отдаёт агрегатору `None`, а не `[]` — наивный `len(items)` упадёт с `TypeError`.
+
+**Полностью пустой период.** В v1 и multi-account DAG-ах (`bq_and_s3_dag.py`, `bq_and_s3_multi_account_dag.py`), где есть отдельные mapped-таски заливки/загрузки, агрегаторы возвращают `[]`, эти mapped-таски разворачиваются в **ноль инстансов** и помечаются `skipped`, а `dag_run` всё равно успешен. В v2 DAG (`bq_and_s3_dag_v2.py`) заливки происходят внутри одного таска `process_date`, поэтому пустой день — это просто `process_date`, возвращающий `None` в состоянии `success`; никакого `skipped` тут не появляется, даже когда пуст весь период.
+
+**Сломанный ответ API.** Ответ 200 без `result.reports` (или с не-списком там) теперь **валит** таск с `AirflowException`, а не выдаётся молча за пустой день.
 
 Путь к файлу зависит от того, как определяется ID кабинета:
 
@@ -186,16 +202,32 @@ def cian_reports():
         cian_conn_id="cian_default",
         base_dir="/tmp/cian",
         output_format="json",
-    ).expand(date=dates)
+    )
+    collected = collect.expand(date=dates).output  # список {"date", "path"} — только дни с данными
 
-    # Добавьте загрузку здесь, например LocalFilesystemToS3Operator.partial(...).expand(filename=collect)
+    # Заливка идёт через агрегатор, который превращает собранные элементы в expand-kwargs.
+    # `items or []` обязателен: за полностью пустой период Airflow отдаёт агрегатору
+    # None (XCom не был записан), а не [].
+    @task
+    def to_s3_params(items):
+        items = list(items or [])
+        return [
+            {"filename": it["path"], "dest_key": f"cian/{it['date']}.json"}
+            for it in items
+        ]
+
+    # LocalFilesystemToS3Operator.partial(...).expand_kwargs(to_s3_params(collected))
 
     def cleanup(ti, **ctx):
-        for path in (ti.xcom_pull(task_ids="collect") or []):
+        items = ti.xcom_pull(task_ids="collect")
+        if isinstance(items, dict):          # единственный mapped-инстанс возвращает голый dict
+            items = [items]
+        for item in (items or []):           # None, когда пуст весь период
+            path = item["path"]
             if path and os.path.exists(path):
                 os.remove(path)
 
-    collect >> PythonOperator(task_id="cleanup", python_callable=cleanup, trigger_rule="all_done")
+    collected >> PythonOperator(task_id="cleanup", python_callable=cleanup, trigger_rule="all_done")
 
 cian_reports()
 ```
