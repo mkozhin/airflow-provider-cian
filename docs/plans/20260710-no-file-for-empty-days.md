@@ -379,21 +379,21 @@ Airflow).
 - Modify: `airflow_provider_cian/operators/builder_reports.py`
 - Modify: `tests/operators/test_builder_reports.py`
 
-- [ ] в `execute()` перенести `os.makedirs` после проверки на пустоту; удаление устаревшего файла оставить до неё
-- [ ] при `not records`: залогировать и `return None` (файл не создавать)
-- [ ] при непустых записях вернуть `{"date": self.date, "path": output_path}`
-- [ ] обновить аннотацию возврата `execute()` на `dict | None`, обновить docstring
-- [ ] развернуть dict в трёх вспомогательных функциях тестов — `TestExecute._run_operator:287`, `TestSnapshotTs._run_with_snapshot:371`, `TestExecuteWithAccount._run_with_account_id:465` — чтобы вызывающие тесты продолжали получать строку-путь
-- [ ] пройти глазами все ассерты классов `TestExecute`, `TestSnapshotTs`, `TestExecuteWithAccount` (~12 тестов, перечислены в Context, категория «б»): `"abc" in path` тихо меняет смысл на проверку ключа словаря и НЕ падает
-- [ ] починить тесты, которые исполняют оператор с `_make_hook_mock([])`, но проверяют другое: `test_idempotent_retry_deletes_old_file:305`, `test_custom_base_dir:343` — передать непустые записи
-- [ ] добавить хотя бы один тест, который проверяет dict-контракт напрямую (а не через развёрнутый в helper путь): непустой день возвращает dict ровно с ключами `{"date", "path"}`, `date == self.date`. Проверять **свойство пути** — `os.path.exists(result["path"])` и `result["path"].endswith(".json")` — а НЕ вхождение вида `"abc" in result`: именно вхождение и деградирует молча из подстроки в ключ словаря
-- [ ] **сохранить** `test_empty_records_json_creates_empty_file:255` и `test_empty_records_csv_creates_header_only:261` как есть: они тестируют `_write` напрямую, `_write` мы не меняем, и это дешёвое стабильное покрытие. Удалять их незачем
-- [ ] **добавить** рядом новые тесты уровня `execute()`: за пустой день файл **не создан**, возвращён `None` (для json и для csv)
-- [ ] обновить аннотацию возврата оператора до `dict[str, str] | None`
-- [ ] заменить `test_empty_records_with_snapshot_ts_returns_str_path:408` на тест «пустые записи + `add_snapshot_ts=True` → `None`, файла нет»
-- [ ] написать тест: устаревший файл прошлой попытки удаляется, даже если в этот раз данных нет
-- [ ] написать тест: за пустой день не создаётся и директория запуска (если её не создали соседние даты)
-- [ ] run tests — must pass before task 3
+- [x] в `execute()` перенести `os.makedirs` после проверки на пустоту; удаление устаревшего файла оставить до неё
+- [x] при `not records`: залогировать и `return None` (файл не создавать)
+- [x] при непустых записях вернуть `{"date": self.date, "path": output_path}`
+- [x] обновить аннотацию возврата `execute()` на `dict | None`, обновить docstring
+- [x] развернуть dict в трёх вспомогательных функциях тестов — `TestExecute._run_operator:287`, `TestSnapshotTs._run_with_snapshot:371`, `TestExecuteWithAccount._run_with_account_id:465` — чтобы вызывающие тесты продолжали получать строку-путь
+- [x] пройти глазами все ассерты классов `TestExecute`, `TestSnapshotTs`, `TestExecuteWithAccount` (~12 тестов, перечислены в Context, категория «б»): `"abc" in path` тихо меняет смысл на проверку ключа словаря и НЕ падает — проверено: во всех классах `path` разворачивается helper'ом/`["path"]` в строку до ассертов
+- [x] починить тесты, которые исполняют оператор с `_make_hook_mock([])`, но проверяют другое: `test_idempotent_retry_deletes_old_file:305`, `test_custom_base_dir:343` — передать непустые записи
+- [x] добавить хотя бы один тест, который проверяет dict-контракт напрямую (а не через развёрнутый в helper путь): непустой день возвращает dict ровно с ключами `{"date", "path"}`, `date == self.date`. Проверять **свойство пути** — `os.path.exists(result["path"])` и `result["path"].endswith(".json")` — а НЕ вхождение вида `"abc" in result`: именно вхождение и деградирует молча из подстроки в ключ словаря (`test_returns_dict_contract`)
+- [x] **сохранить** `test_empty_records_json_creates_empty_file:255` и `test_empty_records_csv_creates_header_only:261` как есть: они тестируют `_write` напрямую, `_write` мы не меняем, и это дешёвое стабильное покрытие. Удалять их незачем
+- [x] **добавить** рядом новые тесты уровня `execute()`: за пустой день файл **не создан**, возвращён `None` (для json и для csv) (`TestExecuteEmptyDay`)
+- [x] обновить аннотацию возврата оператора до `dict[str, str] | None`
+- [x] заменить `test_empty_records_with_snapshot_ts_returns_str_path:408` на тест «пустые записи + `add_snapshot_ts=True` → `None`, файла нет» (`test_empty_records_with_snapshot_ts_returns_none_and_no_file`)
+- [x] написать тест: устаревший файл прошлой попытки удаляется, даже если в этот раз данных нет (`test_stale_file_removed_even_when_no_data`)
+- [x] написать тест: за пустой день не создаётся и директория запуска (если её не создали соседние даты) (`test_empty_day_creates_no_run_directory` + `..._but_keeps_sibling`)
+- [x] run tests — must pass before task 3
 
 ### Task 3: Пример bq_and_s3_dag_v2.py — пропуск заливки за пустой день
 

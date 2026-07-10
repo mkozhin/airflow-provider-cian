@@ -65,7 +65,15 @@ class CianBuilderReportsOperator(BaseOperator):
         self.account_id = account_id
         self.add_snapshot_ts = add_snapshot_ts
 
-    def execute(self, context) -> str:
+    def execute(self, context) -> dict[str, str] | None:
+        """Fetch reports for ``self.date`` and materialise them on disk.
+
+        Returns a self-describing ``{"date": ..., "path": ...}`` dict for a day
+        that has data, or ``None`` for an empty day. On an empty day no file and
+        no run directory are created, and because Airflow does not write an XCom
+        for ``None``, the day drops out of downstream mapped-task expansion
+        entirely (nothing is uploaded).
+        """
         snapshot_ts = (
             context["dag_run"].start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.add_snapshot_ts and self.output_format == "json" else None
@@ -76,16 +84,25 @@ class CianBuilderReportsOperator(BaseOperator):
 
         output_path = self._build_path(context["run_id"], cabinet_id)
 
+        # Remove a stale file from a previous attempt BEFORE deciding on emptiness:
+        # on a retry where the data has since disappeared, an outdated file would
+        # otherwise be left behind up top.
         if os.path.exists(output_path):
             os.remove(output_path)
 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
         records = hook.get_builder_reports(self.date)
+        if not records:
+            self.log.info("Cian returned no reports for %s — nothing to write", self.date)
+            return None
+
+        # makedirs happens AFTER the emptiness check so that an empty day leaves
+        # neither a file nor a fresh run directory behind (a run directory may
+        # already exist because of neighbouring dates — that is fine).
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         enriched = self._enrich(records, hook, snapshot_ts)
         self._write(enriched, output_path)
 
-        return output_path
+        return {"date": self.date, "path": output_path}
 
     def _build_path(self, run_id: str, cabinet_id: str | None = None) -> str:
         safe_run_id = re.sub(r"[^\w-]", "_", run_id)
