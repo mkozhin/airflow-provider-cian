@@ -44,15 +44,13 @@ def _cleanup(ti, **context) -> None:
 
     XCom-контракт ``collect``: за день с данными — dict ``{"date", "path"}``;
     за пустой день XCom не пишется вовсе, поэтому ``xcom_pull`` возвращает список
-    только с непустыми днями, а за полностью пустой период — ``None`` (не ``[]``).
-    Удаляем ``item["path"]`` каждого элемента, устойчиво к ``None`` и к
-    несуществующим файлам.
+    только с непустыми днями (никогда не голый dict), а за полностью пустой
+    период — ``None`` (не ``[]``). Удаляем ``item["path"]`` каждого элемента,
+    устойчиво к ``None`` и к несуществующим файлам.
     """
     items = ti.xcom_pull(task_ids="collect")
-    if isinstance(items, dict):
-        items = [items]
     for item in (items or []):
-        path = item["path"] if isinstance(item, dict) else item
+        path = item["path"]
         if path and os.path.exists(path):
             os.remove(path)
 

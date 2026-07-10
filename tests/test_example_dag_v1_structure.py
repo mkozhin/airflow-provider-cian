@@ -17,18 +17,18 @@ from __future__ import annotations
 import pytest
 from airflow.models.mappedoperator import MappedOperator
 
-from tests.example_stubs import import_dag_module
+from tests.example_stubs import (
+    MAPPED_TASK_IDS as _MAPPED_TASK_IDS,
+    get_dag_obj,
+    import_dag_module,
+)
 
 _MOD_NAME = "examples.bq_and_s3_dag"
-_MAPPED_TASK_IDS = ("upload_gcs", "upload_s3", "load_bq")
 
 
 def _build_dag_obj():
     mod = import_dag_module(_MOD_NAME, real_transfer_operators=True)
-    decorated = mod.cian_to_bq_and_s3
-    if hasattr(decorated, "dag"):
-        return decorated.dag
-    return decorated()
+    return get_dag_obj(mod, "cian_to_bq_and_s3")
 
 
 @pytest.fixture(scope="module")

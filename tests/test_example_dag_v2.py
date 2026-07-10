@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from tests.example_stubs import import_dag_module
+from tests.example_stubs import get_dag_obj, import_dag_module
 
 _MOD_NAME = "examples.bq_and_s3_dag_v2"
 
@@ -24,10 +24,7 @@ def _import_dag_module():
 
 def _get_dag_obj(mod):
     """Return the actual DAG object from the @dag-decorated callable."""
-    decorated = mod.cian_to_bq_and_s3_v2
-    if hasattr(decorated, "dag"):
-        return decorated.dag
-    return decorated()
+    return get_dag_obj(mod, "cian_to_bq_and_s3_v2")
 
 
 def _get_callable(mod, task_id):

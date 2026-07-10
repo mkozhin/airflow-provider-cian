@@ -16,9 +16,13 @@ from __future__ import annotations
 import importlib
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from airflow.models import BaseOperator
+
+# Task ids of the three mapped upload/load tasks in the v1 and multi-account DAGs.
+# Exported here so the structural tests share one definition instead of copy-pasting it.
+MAPPED_TASK_IDS = ("upload_gcs", "upload_s3", "load_bq")
 
 # Provider sub-packages that are not installed in the test environment.
 # NOTE: do NOT include "airflow.providers" — it is a real namespace package.
@@ -222,8 +226,23 @@ def _make_provider_stubs(
     return stubs
 
 
+def get_dag_obj(mod: types.ModuleType, attr: str):
+    """Return the assembled DAG object from a ``@dag``-decorated callable.
+
+    In Airflow 2.x the ``@dag`` decorator exposes the resolved DAG via ``.dag``;
+    the fallback calls the factory (idempotent) to obtain it.
+    """
+    decorated = getattr(mod, attr)
+    if hasattr(decorated, "dag"):
+        return decorated.dag
+    return decorated()
+
+
 def import_dag_module(
-    mod_name: str, *, real_transfer_operators: bool = False
+    mod_name: str,
+    *,
+    real_transfer_operators: bool = False,
+    list_accounts: list | None = None,
 ) -> types.ModuleType:
     """Import (or re-import) an example DAG module with provider stubs injected.
 
@@ -235,6 +254,12 @@ def import_dag_module(
     When ``real_transfer_operators`` is ``True`` the transfer operators are the
     lightweight real ``BaseOperator`` subclasses, so the built DAG contains
     genuine ``MappedOperator`` instances (needed for structural assertions).
+
+    When ``list_accounts`` is not ``None`` the import runs under a patch of
+    ``airflow_provider_cian.accounts.list_accounts`` returning that list, so the
+    multi-account DAG builds its cabinet TaskGroups from the given accounts. Pass
+    ``[]`` for the no-cabinet case; ``None`` (the default) leaves the real
+    ``list_accounts`` in place.
     """
     sys.modules.pop(mod_name, None)
 
@@ -243,6 +268,12 @@ def import_dag_module(
     sys.modules.update(stubs)
 
     try:
+        if list_accounts is not None:
+            with patch(
+                "airflow_provider_cian.accounts.list_accounts",
+                return_value=list_accounts,
+            ):
+                return importlib.import_module(mod_name)
         return importlib.import_module(mod_name)
     finally:
         for k in previously_absent:

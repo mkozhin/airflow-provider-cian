@@ -15,20 +15,20 @@ from unittest.mock import MagicMock
 from airflow.models.mappedoperator import MappedOperator
 
 from tests.example_stubs import (
+    MAPPED_TASK_IDS as _MAPPED_TASK_IDS,
     GCSToBigQueryOperator,
     LocalFilesystemToGCSOperator,
     LocalFilesystemToS3Operator,
     _make_provider_stubs,
+    get_dag_obj,
     import_dag_module,
 )
 
 _V1_MOD = "examples.bq_and_s3_dag"
-_MAPPED_TASK_IDS = ("upload_gcs", "upload_s3", "load_bq")
 
 
 def _get_dag(mod):
-    decorated = mod.cian_to_bq_and_s3
-    return decorated.dag if hasattr(decorated, "dag") else decorated()
+    return get_dag_obj(mod, "cian_to_bq_and_s3")
 
 
 class TestStubOperatorSubclasses:

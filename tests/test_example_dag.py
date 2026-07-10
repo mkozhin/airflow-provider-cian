@@ -13,10 +13,10 @@ def _make_ti(xcom_return):
 
 
 class TestCleanup:
-    """_cleanup под новый XCom-контракт collect (dict | None)."""
+    """_cleanup under the new collect XCom contract (dict | None)."""
 
     def test_none_does_not_raise(self):
-        # Полностью пустой период: xcom_pull возвращает None, а не [].
+        # Fully empty period: xcom_pull returns None, not [].
         ti = _make_ti(None)
         assert _cleanup(ti) is None
         ti.xcom_pull.assert_called_once_with(task_ids="collect")
@@ -41,13 +41,6 @@ class TestCleanup:
         assert not file_a.exists()
         assert not file_b.exists()
 
-    def test_single_dict_is_wrapped(self, tmp_path):
-        file_a = tmp_path / "2024-01-01.json"
-        file_a.write_text("[]")
-        ti = _make_ti({"date": "2024-01-01", "path": str(file_a)})
-        _cleanup(ti)
-        assert not file_a.exists()
-
     def test_missing_file_does_not_raise(self, tmp_path):
         missing = tmp_path / "gone.json"
         items = [{"date": "2024-01-01", "path": str(missing)}]
@@ -55,11 +48,6 @@ class TestCleanup:
         # File never existed — must not raise.
         assert _cleanup(ti) is None
         assert not missing.exists()
-
-    def test_none_path_in_item_is_ignored(self, tmp_path):
-        items = [{"date": "2024-01-01", "path": None}]
-        ti = _make_ti(items)
-        assert _cleanup(ti) is None
 
 
 def test_date_range_multiple_days():

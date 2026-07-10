@@ -17,53 +17,37 @@ the cross-cabinet isolation angle. No metadata DB, no dag.test().
 
 from __future__ import annotations
 
-import importlib
-import sys
-from unittest.mock import patch
-
 import pytest
 from airflow.models.mappedoperator import MappedOperator
 
 from airflow_provider_cian.accounts import Account
-from tests.example_stubs import _make_provider_stubs
+from tests.example_stubs import (
+    MAPPED_TASK_IDS as _MAPPED_TASK_IDS,
+    get_dag_obj,
+    import_dag_module,
+)
 
 _MOD_NAME = "examples.bq_and_s3_multi_account_dag"
-_PATCH_TARGET = "airflow_provider_cian.accounts.list_accounts"
 
 # The two cabinets every test in this module builds the DAG with.
 _CABINETS = ("aa", "bb")
-_MAPPED_TASK_IDS = ("upload_gcs", "upload_s3", "load_bq")
 
 
 def _import_dag_module(mock_accounts: list[Account]):
     """Import (or re-import) the multi-account DAG with real transfer operators.
 
-    Combines two things the plain helpers do separately: the real
-    ``BaseOperator`` transfer-operator subclasses (so ``expand_kwargs`` yields
-    genuine ``MappedOperator`` instances) AND a mocked ``list_accounts`` (so the
-    cabinet TaskGroups are actually built at import time).
+    Combines two things: the real ``BaseOperator`` transfer-operator subclasses
+    (so ``expand_kwargs`` yields genuine ``MappedOperator`` instances) AND a
+    mocked ``list_accounts`` (so the cabinet TaskGroups are actually built at
+    import time). Both are provided by ``import_dag_module``.
     """
-    sys.modules.pop(_MOD_NAME, None)
-
-    stubs = _make_provider_stubs(real_transfer_operators=True)
-    previously_absent = [k for k in stubs if k not in sys.modules]
-    sys.modules.update(stubs)
-
-    try:
-        with patch(_PATCH_TARGET, return_value=mock_accounts):
-            mod = importlib.import_module(_MOD_NAME)
-    finally:
-        for k in previously_absent:
-            sys.modules.pop(k, None)
-
-    return mod
+    return import_dag_module(
+        _MOD_NAME, real_transfer_operators=True, list_accounts=mock_accounts
+    )
 
 
 def _get_dag_obj(mod):
-    decorated = mod.cian_to_bq_and_s3_multi_account
-    if hasattr(decorated, "dag"):
-        return decorated.dag
-    return decorated()
+    return get_dag_obj(mod, "cian_to_bq_and_s3_multi_account")
 
 
 @pytest.fixture(scope="module")
