@@ -30,7 +30,19 @@ class CianHook(BaseHook):
 
     def get_builder_reports(self, on_date: str) -> list[dict]:
         data = self._make_request("/v1/get-builder-reports/", {"onDate": on_date})
-        return data.get("result", {}).get("reports", [])
+        # data is resp.json(): a valid 200 body may be a list, string or null,
+        # so we cannot call .get() until we know it is a dict.
+        result = data.get("result") if isinstance(data, dict) else None
+        reports = result.get("reports") if isinstance(result, dict) else None
+        # An empty list (reports: []) is a legitimate answer — a day with no
+        # calls. A missing or non-list 'reports' is a broken response and must
+        # fail the task instead of masquerading as an empty day.
+        if not isinstance(reports, list):
+            raise AirflowException(
+                f"Unexpected Cian response for onDate={on_date}: "
+                f"expected a list at 'result.reports', got {str(data)[:200]}"
+            )
+        return reports
 
     def get_newbuilding_name(self, newbuilding_id: int) -> str:
         try:
@@ -55,7 +67,7 @@ class CianHook(BaseHook):
         except Exception as e:
             return False, str(e)
 
-    def _make_request(self, path: str, params: dict, not_found_codes: tuple[int, ...] = ()) -> dict:
+    def _make_request(self, path: str, params: dict, not_found_codes: tuple[int, ...] = ()) -> object:
         conn = self.get_connection(self.cian_conn_id)
         base_url = conn.host.rstrip("/")
         token = resolve_token(conn, self.account_id)

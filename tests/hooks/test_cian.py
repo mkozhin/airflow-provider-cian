@@ -23,11 +23,17 @@ def _make_hook() -> CianHook:
     return hook
 
 
-def _mock_response(status_code: int, json_data: dict | None = None) -> MagicMock:
+_UNSET = object()
+
+
+def _mock_response(status_code: int, json_data: object = _UNSET) -> MagicMock:
+    # Use a sentinel default so callers can explicitly pass [] or None as the
+    # body; `json_data or {}` would collapse both of those into {}.
+    body = {} if json_data is _UNSET else json_data
     resp = MagicMock()
     resp.status_code = status_code
-    resp.json.return_value = json_data or {}
-    resp.text = str(json_data)
+    resp.json.return_value = body
+    resp.text = str(body)
     return resp
 
 
@@ -68,14 +74,55 @@ class TestGetBuilderReports:
 
         assert result == []
 
-    def test_missing_result_key_returns_empty_list(self):
+    def test_missing_result_key_raises(self):
         hook = _make_hook()
         response = _mock_response(200, {})
 
         with patch("requests.get", return_value=response):
-            result = hook.get_builder_reports("2024-01-01")
+            with pytest.raises(AirflowException, match="onDate=2024-01-01"):
+                hook.get_builder_reports("2024-01-01")
 
-        assert result == []
+    def test_reports_not_a_list_raises(self):
+        hook = _make_hook()
+        response = _mock_response(200, {"result": {"reports": {}}})
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(AirflowException, match="result.reports"):
+                hook.get_builder_reports("2024-01-01")
+
+    def test_errors_body_with_200_raises(self):
+        hook = _make_hook()
+        response = _mock_response(200, {"errors": [{"code": "boom"}]})
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(AirflowException, match="Unexpected Cian response"):
+                hook.get_builder_reports("2024-01-01")
+
+    def test_top_level_list_body_raises(self):
+        hook = _make_hook()
+        response = _mock_response(200, [])
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(AirflowException, match="Unexpected Cian response"):
+                hook.get_builder_reports("2024-01-01")
+
+    def test_top_level_null_body_raises(self):
+        hook = _make_hook()
+        response = _mock_response(200, None)
+
+        with patch("requests.get", return_value=response):
+            with pytest.raises(AirflowException, match="Unexpected Cian response"):
+                hook.get_builder_reports("2024-01-01")
+
+    def test_broken_response_makes_test_connection_return_false(self):
+        hook = _make_hook()
+        response = _mock_response(200, {"errors": [{"code": "boom"}]})
+
+        with patch("requests.get", return_value=response):
+            ok, msg = hook.test_connection()
+
+        assert ok is False
+        assert "Unexpected Cian response" in msg
 
     def test_retry_429_succeeds_on_second_attempt(self):
         hook = _make_hook()

@@ -361,17 +361,17 @@ Airflow).
 - Modify: `airflow_provider_cian/hooks/cian.py`
 - Modify: `tests/hooks/test_cian.py`
 
-- [ ] в `get_builder_reports` заменить `data.get("result", {}).get("reports", [])` на явную проверку: **сначала `isinstance(data, dict)`** (иначе `.get` на списке/строке даст `AttributeError`, а не `AirflowException`), затем `result` — dict, затем `result["reports"]` — list; иначе `AirflowException` с `onDate` и `str(data)[:200]`
-- [ ] добавить в код комментарий, почему `reports: []` — легитимный ответ, а отсутствие ключа — нет
-- [ ] обновить аннотацию `_make_request` (`hooks/cian.py:58`) с `-> dict` на `-> object` (или явный JSON-тип): она перестала быть правдой в тот момент, когда мы начали обрабатывать список/строку/`null`
-- [ ] переделать helper `_mock_response` (`tests/hooks/test_cian.py:26-31`): заменить `json_data or {}` на sentinel и расширить аннотацию с `dict | None` до `object`, иначе `[]` и `None` невозможно передать в тест
-- [ ] переписать `tests/hooks/test_cian.py:71` `test_missing_result_key_returns_empty_list` → `test_missing_result_key_raises` (ожидает `AirflowException`, в сообщении есть `onDate`)
-- [ ] написать тест: `{"result": {"reports": []}}` по-прежнему возвращает `[]` (не падает)
-- [ ] написать тест: `{"result": {"reports": {}}}` (не список) → `AirflowException`
-- [ ] написать тест: `{"errors": [...]}` с кодом 200 → `AirflowException`, а не тихий `[]`
-- [ ] написать тест: тело верхнего уровня — список `[]` и `null` → `AirflowException`, а не `AttributeError`
-- [ ] проверить, что `test_connection` при неожиданном теле возвращает `(False, msg)`
-- [ ] run tests (`pytest tests/ -v`) — must pass before task 2
+- [x] в `get_builder_reports` заменить `data.get("result", {}).get("reports", [])` на явную проверку: **сначала `isinstance(data, dict)`** (иначе `.get` на списке/строке даст `AttributeError`, а не `AirflowException`), затем `result` — dict, затем `result["reports"]` — list; иначе `AirflowException` с `onDate` и `str(data)[:200]`
+- [x] добавить в код комментарий, почему `reports: []` — легитимный ответ, а отсутствие ключа — нет
+- [x] обновить аннотацию `_make_request` (`hooks/cian.py:58`) с `-> dict` на `-> object` (или явный JSON-тип): она перестала быть правдой в тот момент, когда мы начали обрабатывать список/строку/`null`
+- [x] переделать helper `_mock_response` (`tests/hooks/test_cian.py:26-31`): заменить `json_data or {}` на sentinel и расширить аннотацию с `dict | None` до `object`, иначе `[]` и `None` невозможно передать в тест
+- [x] переписать `tests/hooks/test_cian.py:71` `test_missing_result_key_returns_empty_list` → `test_missing_result_key_raises` (ожидает `AirflowException`, в сообщении есть `onDate`)
+- [x] написать тест: `{"result": {"reports": []}}` по-прежнему возвращает `[]` (не падает) — покрыт существующим `test_empty_reports_returns_empty_list`
+- [x] написать тест: `{"result": {"reports": {}}}` (не список) → `AirflowException`
+- [x] написать тест: `{"errors": [...]}` с кодом 200 → `AirflowException`, а не тихий `[]`
+- [x] написать тест: тело верхнего уровня — список `[]` и `null` → `AirflowException`, а не `AttributeError`
+- [x] проверить, что `test_connection` при неожиданном теле возвращает `(False, msg)`
+- [x] run tests (`pytest tests/ -v`) — must pass before task 2
 
 ### Task 2: Оператор не пишет файл за пустой день и возвращает dict | None
 
