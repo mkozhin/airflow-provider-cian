@@ -216,13 +216,15 @@ def cian_reports():
             for it in items
         ]
 
+    # Подключите заливку здесь (закомментировано — это заготовка-шаблон):
     # LocalFilesystemToS3Operator.partial(...).expand_kwargs(to_s3_params(collected))
 
     def cleanup(ti, **ctx):
+        # xcom_pull на mapped-таске возвращает list-подобный объект из
+        # {"date", "path"}-словарей (только дни с данными) или None, когда пуст
+        # весь период — но никогда не голый dict.
         items = ti.xcom_pull(task_ids="collect")
-        if isinstance(items, dict):          # единственный mapped-инстанс возвращает голый dict
-            items = [items]
-        for item in (items or []):           # None, когда пуст весь период
+        for item in (items or []):
             path = item["path"]
             if path and os.path.exists(path):
                 os.remove(path)

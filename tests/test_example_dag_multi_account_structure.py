@@ -8,9 +8,11 @@ genuine ``MappedOperator`` instances inside each cabinet's TaskGroup.
 The property under test is DIFFERENT from the v1 structure test (Task 9): here we
 verify cabinet INDEPENDENCE. Each cabinet gets its own TaskGroup, its edges and
 trigger rules never reference the neighbouring cabinet's tasks, and its
-aggregators stamp ITS OWN cabinet_id into the GCS/S3 keys and BQ table name. An
-empty cabinet therefore cannot structurally suppress a neighbour that has data.
-No metadata DB, no dag.test().
+aggregators stamp ITS OWN cabinet_id into the GCS/S3 keys and BQ table name while
+NOT leaking the other cabinet's id. Per-cabinet aggregator *behaviour* in
+isolation (cabinet_id present, dates not shifted for a single cabinet) is unit
+coverage that lives in tests/test_example_dag_multi_account.py; here we keep only
+the cross-cabinet isolation angle. No metadata DB, no dag.test().
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import importlib
 import sys
 from unittest.mock import patch
 
+import pytest
 from airflow.models.mappedoperator import MappedOperator
 
 from airflow_provider_cian.accounts import Account
@@ -63,8 +66,21 @@ def _get_dag_obj(mod):
     return decorated()
 
 
-def _import_two_cabinets():
+@pytest.fixture(scope="module")
+def mod():
+    """Build the two-cabinet DAG module once for the whole module.
+
+    Re-assembling the DAG (pop sys.modules, re-run module code, inject stubs,
+    patch list_accounts) is expensive; every test only inspects the built graph
+    or pulls a python_callable off it, so one cached build is safe and far
+    cheaper than rebuilding per test.
+    """
     return _import_dag_module([Account(id="aa"), Account(id="bb")])
+
+
+@pytest.fixture(scope="module")
+def dag_obj(mod):
+    return _get_dag_obj(mod)
 
 
 def _get_cabinet_callable(mod, cabinet_id, task_id):
@@ -75,16 +91,12 @@ def _get_cabinet_callable(mod, cabinet_id, task_id):
 class TestCabinetTaskGroups:
     """Each cabinet has its own TaskGroup; mapped tasks live inside it."""
 
-    def test_one_task_group_per_cabinet(self):
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
+    def test_one_task_group_per_cabinet(self, dag_obj):
         group_ids = set(dag_obj.task_group_dict.keys())
         for cab in _CABINETS:
             assert f"cabinet_{cab}" in group_ids
 
-    def test_mapped_tasks_registered_inside_each_group(self):
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
+    def test_mapped_tasks_registered_inside_each_group(self, dag_obj):
         for cab in _CABINETS:
             for task_id in _MAPPED_TASK_IDS:
                 full_id = f"cabinet_{cab}.{task_id}"
@@ -94,10 +106,8 @@ class TestCabinetTaskGroups:
                     task, MappedOperator
                 ), f"{full_id} is {type(task).__name__}, not a MappedOperator"
 
-    def test_mapped_tasks_belong_to_their_own_group(self):
+    def test_mapped_tasks_belong_to_their_own_group(self, dag_obj):
         """upload_s3/upload_gcs/load_bq report the cabinet's group as their owner."""
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
         for cab in _CABINETS:
             for task_id in _MAPPED_TASK_IDS:
                 task = dag_obj.get_task(f"cabinet_{cab}.{task_id}")
@@ -120,9 +130,7 @@ class TestCabinetIndependence:
             if tid.startswith(f"cabinet_{cab}.")
         }
 
-    def test_no_edge_crosses_between_cabinets(self):
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
+    def test_no_edge_crosses_between_cabinets(self, dag_obj):
         for cab, other in (("aa", "bb"), ("bb", "aa")):
             other_prefix = f"cabinet_{other}."
             for tid in self._group_task_ids(dag_obj, cab):
@@ -133,10 +141,8 @@ class TestCabinetIndependence:
                     f"{tid} references tasks of the other cabinet: {offending}"
                 )
 
-    def test_intra_group_wiring_stays_within_prefix(self):
+    def test_intra_group_wiring_stays_within_prefix(self, dag_obj):
         """collect→aggregator→upload and the load chain stay in the same cabinet."""
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
         for cab in _CABINETS:
             p = f"cabinet_{cab}."
             assert p + "make_gcs_params" in dag_obj.get_task(p + "upload_gcs").upstream_task_ids
@@ -145,15 +151,11 @@ class TestCabinetIndependence:
             assert p + "collect" in dag_obj.get_task(p + "make_gcs_params").upstream_task_ids
             assert p + "upload_gcs" in dag_obj.get_task(p + "load_bq").upstream_task_ids
 
-    def test_cleanup_trigger_rule_is_all_done_per_cabinet(self):
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
+    def test_cleanup_trigger_rule_is_all_done_per_cabinet(self, dag_obj):
         for cab in _CABINETS:
             assert dag_obj.get_task(f"cabinet_{cab}.cleanup").trigger_rule == "all_done"
 
-    def test_cleanup_upstreams_stay_within_own_cabinet(self):
-        mod = _import_two_cabinets()
-        dag_obj = _get_dag_obj(mod)
+    def test_cleanup_upstreams_stay_within_own_cabinet(self, dag_obj):
         for cab in _CABINETS:
             p = f"cabinet_{cab}."
             cleanup_up = dag_obj.get_task(p + "cleanup").upstream_task_ids
@@ -164,41 +166,36 @@ class TestCabinetIndependence:
 
 
 class TestPerCabinetAggregatorStamping:
-    """Each cabinet's aggregators embed ITS OWN cabinet_id — cabinets don't mix."""
+    """Cross-cabinet isolation: each aggregator stamps ITS OWN cabinet_id and
+    never leaks the neighbour's — the angle single-cabinet unit tests can't see."""
 
     ITEMS = [
         {"date": "2024-01-01", "path": "/tmp/cian/x/run1/2024-01-01.json"},
         {"date": "2024-01-02", "path": "/tmp/cian/x/run1/2024-01-02.json"},
     ]
 
-    def test_gcs_keys_carry_own_cabinet_id(self):
-        mod = _import_two_cabinets()
+    def test_gcs_keys_carry_own_cabinet_id_not_others(self, mod):
         for cab in _CABINETS:
             make_gcs_params = _get_cabinet_callable(mod, cab, "make_gcs_params")
             params = make_gcs_params(self.ITEMS, cabinet_id=cab, run_id="run1")
-            assert len(params) == 2
             other = "bb" if cab == "aa" else "aa"
             for p in params:
                 assert f"/{cab}/" in p["dst"]
                 assert f"/{other}/" not in p["dst"]
 
-    def test_s3_keys_carry_own_cabinet_id(self):
-        mod = _import_two_cabinets()
+    def test_s3_keys_carry_own_cabinet_id_not_others(self, mod):
         for cab in _CABINETS:
             make_s3_params = _get_cabinet_callable(mod, cab, "make_s3_params")
             params = make_s3_params(self.ITEMS, cabinet_id=cab)
-            assert len(params) == 2
             other = "bb" if cab == "aa" else "aa"
             for p in params:
                 assert f"/{cab}/" in p["dest_key"]
                 assert f"/{other}/" not in p["dest_key"]
 
-    def test_bq_table_carries_own_cabinet_id(self):
-        mod = _import_two_cabinets()
+    def test_bq_table_carries_own_cabinet_id_not_others(self, mod):
         for cab in _CABINETS:
             make_bq_params = _get_cabinet_callable(mod, cab, "make_bq_params")
             params = make_bq_params(self.ITEMS, cabinet_id=cab, run_id="run1")
-            assert len(params) == 2
             other = "bb" if cab == "aa" else "aa"
             for p in params:
                 table = p["destination_project_dataset_table"]

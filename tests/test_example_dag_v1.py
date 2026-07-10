@@ -107,6 +107,9 @@ class TestV1AggregatorsWithData:
         assert len(params) == 2
         assert params[0]["src"] == "/tmp/cian/run1/2024-01-01.json"
         assert params[0]["dst"].endswith("2024-01-01.json")
+        # safe_id(run_id) must be interpolated into the GCS object path — guards
+        # against silently dropping the per-run segment.
+        assert "/run1/" in params[0]["dst"]
         assert params[1]["src"] == "/tmp/cian/run1/2024-01-02.json"
         assert params[1]["dst"].endswith("2024-01-02.json")
 
@@ -130,6 +133,8 @@ class TestV1AggregatorsWithData:
         assert len(params) == 2
         assert params[0]["destination_project_dataset_table"].endswith("$20240101")
         assert params[0]["source_objects"][0].endswith("2024-01-01.json")
+        # run_id segment is interpolated into the GCS source object URI.
+        assert "/run1/" in params[0]["source_objects"][0]
         assert params[1]["destination_project_dataset_table"].endswith("$20240102")
         assert params[1]["source_objects"][0].endswith("2024-01-02.json")
 

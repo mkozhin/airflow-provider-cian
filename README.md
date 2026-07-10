@@ -216,13 +216,15 @@ def cian_reports():
             for it in items
         ]
 
+    # Wire the upload here (left commented — this is a template stub):
     # LocalFilesystemToS3Operator.partial(...).expand_kwargs(to_s3_params(collected))
 
     def cleanup(ti, **ctx):
+        # xcom_pull on a mapped task returns a list-like of the per-day
+        # {"date", "path"} dicts (only days with data), or None when the whole
+        # period is empty — never a bare dict.
         items = ti.xcom_pull(task_ids="collect")
-        if isinstance(items, dict):          # a single mapped instance returns a bare dict
-            items = [items]
-        for item in (items or []):           # None when the whole period is empty
+        for item in (items or []):
             path = item["path"]
             if path and os.path.exists(path):
                 os.remove(path)

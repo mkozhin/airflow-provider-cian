@@ -219,8 +219,8 @@ def cian_to_bq_and_s3_multi_account():
         return params
 
     @task(trigger_rule="all_done")
-    def cleanup(paths: list[str], cabinet_id: str, **context) -> None:
-        if not paths:
+    def cleanup(items: list[dict] | None, cabinet_id: str, **context) -> None:
+        if not items:
             return
         sid = safe_id(context["run_id"])
         run_dir = os.path.join(BASE_DIR, cabinet_id, sid)

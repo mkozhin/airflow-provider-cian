@@ -189,6 +189,8 @@ class TestMultiAccountAggregatorsWithData:
         assert len(params) == 2
         assert params[0]["src"] == "/tmp/cian/aa/run1/2024-01-01.json"
         assert "/aa/" in params[0]["dst"]
+        # safe_id(run_id) must survive interpolation into the GCS object path.
+        assert "/run1/" in params[0]["dst"]
         assert params[0]["dst"].endswith("2024-01-01.json")
         assert params[1]["dst"].endswith("2024-01-02.json")
 
@@ -229,6 +231,22 @@ class TestMultiAccountCleanup:
         mod = _import_dag_module([Account(id="aa")])
         cleanup = _get_cabinet_callable(mod, "aa", "cleanup")
         assert cleanup([], cabinet_id="aa", run_id="run1") is None
+
+    def test_cleanup_removes_run_dir(self, tmp_path):
+        """The positive path: shutil.rmtree removes BASE_DIR/cabinet_id/sid."""
+        mod = _import_dag_module([Account(id="aa")])
+        cleanup = _get_cabinet_callable(mod, "aa", "cleanup")
+
+        run_dir = tmp_path / "aa" / "run1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "2024-01-01.json").write_text("{}")
+
+        items = [{"date": "2024-01-01", "path": str(run_dir / "2024-01-01.json")}]
+        # cleanup derives run_dir from the module-level BASE_DIR, so patch it.
+        with patch.object(mod, "BASE_DIR", str(tmp_path)):
+            cleanup(items, cabinet_id="aa", run_id="run1")
+
+        assert not run_dir.exists()
 
 
 class TestMultiAccountDagConstants:

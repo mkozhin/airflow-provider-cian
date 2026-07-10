@@ -170,7 +170,9 @@ def _make_provider_stubs(
         stubs[name] = mod
 
     def _get(name: str) -> types.ModuleType:
-        return stubs.get(name, sys.modules.get(name, types.ModuleType(name)))
+        # Every name passed here is in _MISSING_PROVIDERS, so it is either a stub
+        # we just built or an already-present real module in sys.modules.
+        return stubs[name] if name in stubs else sys.modules[name]
 
     # ── hooks ─────────────────────────────────────────────────────────────────
     gcs_mod = _get("airflow.providers.google.cloud.hooks.gcs")

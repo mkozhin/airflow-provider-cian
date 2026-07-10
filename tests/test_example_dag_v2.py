@@ -69,6 +69,20 @@ class TestV2Cleanup:
         cleanup = _get_callable(mod, "cleanup")
         assert cleanup([]) is None
 
+    def test_cleanup_removes_run_dir(self, tmp_path):
+        """The positive path: cleanup removes the run dir of the given paths."""
+        mod = _import_dag_module()
+        cleanup = _get_callable(mod, "cleanup")
+
+        run_dir = tmp_path / "run1"
+        run_dir.mkdir()
+        f = run_dir / "2024-01-01.json"
+        f.write_text("{}")
+
+        # process_date returns local path strings; cleanup deletes their run dir.
+        cleanup([str(f)])
+        assert not run_dir.exists()
+
 
 class TestV2ProcessDate:
     """process_date behaviour for empty vs non-empty days."""
@@ -129,6 +143,15 @@ class TestV2ProcessDate:
         # GCS upload uses the path returned by execute()["path"].
         _, gcs_kwargs = gcs_hook.return_value.upload.call_args
         assert gcs_kwargs["filename"] == local_path
+
+        # BQ load reads from the gs:// staging URI and targets the day partition.
+        bq_call = bq_hook.return_value.get_client.return_value.load_table_from_uri.call_args
+        gs_uri, table = bq_call.args[0], bq_call.args[1]
+        assert gs_uri.startswith("gs://")
+        assert gs_uri.endswith("2024-01-01.json")
+        assert "/run1/" in gs_uri  # safe_id(run_id) interpolated into the staging path
+        assert table.endswith("$20240101")  # ${date_compact} partition decorator
+        assert "job_config" in bq_call.kwargs
 
         # S3 upload uses the path returned by execute()["path"].
         _, s3_kwargs = s3_hook.return_value.load_file.call_args
