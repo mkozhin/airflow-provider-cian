@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.4.0] - 2026-07-10
 
 - **BREAKING**: `CianBuilderReportsOperator.execute()` return type changed from `str` to `dict | None`. A day with data now returns a self-describing dict `{"date": ..., "path": ...}`; an empty day (`reports: []`) returns `None` and writes **no file** and **no XCom**. DAGs (and XCom consumers) that read the `collect` result as a path string must unwrap `item["path"]`, and aggregators must start with `items = list(items or [])` because a fully empty period makes Airflow hand them `None`, not `[]`
 - Fixed: an empty day no longer produces an empty S3/GCS object (0-byte JSON / header-only CSV); nothing is uploaded for a day without data
