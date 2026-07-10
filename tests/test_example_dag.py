@@ -1,8 +1,65 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from unittest.mock import MagicMock
 
-from examples.builder_reports_dag import get_date_range
+from examples.builder_reports_dag import _cleanup, get_date_range
+
+
+def _make_ti(xcom_return):
+    ti = MagicMock(name="ti")
+    ti.xcom_pull.return_value = xcom_return
+    return ti
+
+
+class TestCleanup:
+    """_cleanup под новый XCom-контракт collect (dict | None)."""
+
+    def test_none_does_not_raise(self):
+        # Полностью пустой период: xcom_pull возвращает None, а не [].
+        ti = _make_ti(None)
+        assert _cleanup(ti) is None
+        ti.xcom_pull.assert_called_once_with(task_ids="collect")
+
+    def test_empty_list_does_not_raise(self):
+        ti = _make_ti([])
+        assert _cleanup(ti) is None
+
+    def test_deletes_item_path_for_dict_items(self, tmp_path):
+        file_a = tmp_path / "2024-01-01.json"
+        file_b = tmp_path / "2024-01-02.json"
+        file_a.write_text("[]")
+        file_b.write_text("[]")
+
+        items = [
+            {"date": "2024-01-01", "path": str(file_a)},
+            {"date": "2024-01-02", "path": str(file_b)},
+        ]
+        ti = _make_ti(items)
+        _cleanup(ti)
+
+        assert not file_a.exists()
+        assert not file_b.exists()
+
+    def test_single_dict_is_wrapped(self, tmp_path):
+        file_a = tmp_path / "2024-01-01.json"
+        file_a.write_text("[]")
+        ti = _make_ti({"date": "2024-01-01", "path": str(file_a)})
+        _cleanup(ti)
+        assert not file_a.exists()
+
+    def test_missing_file_does_not_raise(self, tmp_path):
+        missing = tmp_path / "gone.json"
+        items = [{"date": "2024-01-01", "path": str(missing)}]
+        ti = _make_ti(items)
+        # File never existed — must not raise.
+        assert _cleanup(ti) is None
+        assert not missing.exists()
+
+    def test_none_path_in_item_is_ignored(self, tmp_path):
+        items = [{"date": "2024-01-01", "path": None}]
+        ti = _make_ti(items)
+        assert _cleanup(ti) is None
 
 
 def test_date_range_multiple_days():

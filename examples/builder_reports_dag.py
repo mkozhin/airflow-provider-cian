@@ -11,6 +11,12 @@
 
 Несколько клиентов с одного IP и всё равно 429?
   Создайте Airflow Pool "cian_api" с нужным числом слотов и передайте pool="cian_api" в partial().
+
+Контракт XCom таска collect:
+  - за день с данными оператор возвращает dict ``{"date", "path"}``;
+  - за пустой день оператор возвращает ``None``, Airflow XCom не пишет вовсе,
+    поэтому файла нет и этот день просто выпадает из результата mapped-таска
+    (а при полностью пустом периоде ``xcom_pull`` вернёт ``None``, а не ``[]``).
 """
 
 from __future__ import annotations
@@ -31,6 +37,24 @@ def get_date_range(date_from: str, date_to: str) -> list[str]:
     end = date.fromisoformat(date_to)
     days = (end - start).days + 1
     return [(end - timedelta(days=i)).isoformat() for i in range(days)]
+
+
+def _cleanup(ti, **context) -> None:
+    """Удаляет локальные файлы, собранные таском ``collect``.
+
+    XCom-контракт ``collect``: за день с данными — dict ``{"date", "path"}``;
+    за пустой день XCom не пишется вовсе, поэтому ``xcom_pull`` возвращает список
+    только с непустыми днями, а за полностью пустой период — ``None`` (не ``[]``).
+    Удаляем ``item["path"]`` каждого элемента, устойчиво к ``None`` и к
+    несуществующим файлам.
+    """
+    items = ti.xcom_pull(task_ids="collect")
+    if isinstance(items, dict):
+        items = [items]
+    for item in (items or []):
+        path = item["path"] if isinstance(item, dict) else item
+        if path and os.path.exists(path):
+            os.remove(path)
 
 
 yesterday = date.today() - timedelta(days=1)
@@ -65,14 +89,6 @@ def cian_builder_reports_dag():
         base_dir="/tmp/cian",
         output_format="json",
     ).expand(date=dates)
-
-    def _cleanup(ti, **context):
-        paths = ti.xcom_pull(task_ids="collect")
-        if isinstance(paths, str):
-            paths = [paths]
-        for path in (paths or []):
-            if path and os.path.exists(path):
-                os.remove(path)
 
     cleanup = PythonOperator(
         task_id="cleanup",

@@ -423,13 +423,13 @@ Airflow).
 - Modify: `examples/builder_reports_dag.py`
 - Modify: `tests/test_example_dag.py`
 
-- [ ] в `_cleanup` (`:69`) обработать `paths=None` и элементы-словари, удалять `item["path"]`
-- [ ] обновить docstring DAG: за пустой день файла нет, XCom пуст
-- [ ] экспортировать `_cleanup` так, чтобы он был тестируем напрямую (или тестировать через `ti.xcom_pull`-мок)
-- [ ] написать тест: `_cleanup` при `xcom_pull → None` не падает
-- [ ] написать тест: `_cleanup` при списке словарей удаляет именно `item["path"]`
-- [ ] написать тест: `_cleanup` при несуществующем файле не падает
-- [ ] run tests — must pass before task 5
+- [x] в `_cleanup` (`:69`) обработать `paths=None` и элементы-словари, удалять `item["path"]`
+- [x] обновить docstring DAG: за пустой день файла нет, XCom пуст
+- [x] экспортировать `_cleanup` так, чтобы он был тестируем напрямую (или тестировать через `ti.xcom_pull`-мок) — вынесен на уровень модуля
+- [x] написать тест: `_cleanup` при `xcom_pull → None` не падает
+- [x] написать тест: `_cleanup` при списке словарей удаляет именно `item["path"]`
+- [x] написать тест: `_cleanup` при несуществующем файле не падает
+- [x] run tests — must pass before task 5
 
 ### Task 5: Пример bq_and_s3_dag.py — агрегаторы поверх collected items
 
