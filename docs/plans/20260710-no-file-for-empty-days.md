@@ -457,20 +457,20 @@ Airflow).
 - Modify: `examples/bq_and_s3_multi_account_dag.py`
 - Modify: `tests/test_example_dag_multi_account.py`
 
-- [ ] перевести `make_gcs_params` (`:167`), `make_bq_params` (`:175`), `make_s3_params` (`:188`) на вход `items` + `cabinet_id`, убрать `zip(paths, dates)`
-- [ ] в каждом агрегаторе `items = list(items or [])`
-- [ ] ⚠️ в `make_gcs_params` (`:168`) и `make_bq_params` (`:176`) сделать `return []` **до** чтения `context["run_id"]` (`:169`, `:177`) — иначе прямой вызов из теста даст `KeyError`, даже когда `items is None`
-- [ ] `make_bq_params` строить из `items`, а не из `dates`
-- [ ] `cleanup` (`:204-212`) — правка **не нужна**: он вычисляет `run_dir` из `BASE_DIR`/`cabinet_id`/`sid` и никогда не индексирует `paths`, а `if not paths: return` уже покрывает и `None`, и `[]`. Только убедиться в этом и не «чинить» лишнего
-- [ ] обновить аннотации агрегаторов: вход `list[dict] | None`, не `list[str]`
-- [ ] обновить `make_cabinet_group` (`:214-257`): `collected = collect.expand(date=dates).output`, агрегаторы от `collected`
-- [ ] независимость кабинетов (пустой кабинет не подавляет соседей) проверяется интеграционно в задаче 10, здесь достаточно юнит-уровня
-- [ ] доступ к агрегаторам через `dag.get_task("cabinet_<id>.<task_id>").python_callable` — внутри `TaskGroup` task_id имеет префикс группы
-- [ ] написать тесты на `None`-путь для всех трёх агрегаторов: `make_*_params(None, cabinet_id="x") == []`
-- [ ] написать тест: агрегаторы кладут `cabinet_id` в ключи GCS/S3 и в имя BQ-таблицы
-- [ ] обновить тесты структуры в `tests/test_example_dag_multi_account.py` (ассерты по task_id, если менялись)
-- [ ] обновить docstring DAG
-- [ ] run tests — must pass before task 7
+- [x] перевести `make_gcs_params` (`:167`), `make_bq_params` (`:175`), `make_s3_params` (`:188`) на вход `items` + `cabinet_id`, убрать `zip(paths, dates)`
+- [x] в каждом агрегаторе `items = list(items or [])`
+- [x] ⚠️ в `make_gcs_params` (`:168`) и `make_bq_params` (`:176`) сделать `return []` **до** чтения `context["run_id"]` (`:169`, `:177`) — иначе прямой вызов из теста даст `KeyError`, даже когда `items is None`
+- [x] `make_bq_params` строить из `items`, а не из `dates`
+- [x] `cleanup` (`:204-212`) — правка **не нужна**: он вычисляет `run_dir` из `BASE_DIR`/`cabinet_id`/`sid` и никогда не индексирует `paths`, а `if not paths: return` уже покрывает и `None`, и `[]`. Только убедиться в этом и не «чинить» лишнего
+- [x] обновить аннотации агрегаторов: вход `list[dict] | None`, не `list[str]`
+- [x] обновить `make_cabinet_group` (`:214-257`): `collected = collect.expand(date=dates).output`, агрегаторы от `collected`
+- [x] независимость кабинетов (пустой кабинет не подавляет соседей) проверяется интеграционно в задаче 10, здесь достаточно юнит-уровня
+- [x] доступ к агрегаторам через `dag.get_task("cabinet_<id>.<task_id>").python_callable` — внутри `TaskGroup` task_id имеет префикс группы
+- [x] написать тесты на `None`-путь для всех трёх агрегаторов: `make_*_params(None, cabinet_id="x") == []`
+- [x] написать тест: агрегаторы кладут `cabinet_id` в ключи GCS/S3 и в имя BQ-таблицы
+- [x] обновить тесты структуры в `tests/test_example_dag_multi_account.py` (ассерты по task_id, если менялись) — task_id не менялись; добавлены новые тестовые классы для агрегаторов и cleanup
+- [x] обновить docstring DAG
+- [x] run tests — must pass before task 7
 
 ### Task 7: Документация — README, CONTEXT, CHANGELOG
 

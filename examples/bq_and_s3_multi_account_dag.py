@@ -25,6 +25,15 @@ collect (×N дат) → upload_gcs → load_bq
 - кладёт в S3: `{S3_PREFIX}/{cabinet_id}/_year=.../_month=.../_day=.../_date=.../{date}.json`
 - чистит только свою папку после завершения загрузок
 
+## Пустой день
+
+collect за день без данных возвращает None и не пишет XCom, поэтому mapped-таски
+заливки (upload_gcs/upload_s3/load_bq) внутри кабинета разворачиваются только за
+дни с данными. Если у кабинета пуст весь период, его агрегаторы получают None,
+возвращают [], и upload_*/load_bq разворачиваются в ноль инстансов — Airflow
+помечает их skipped, а dag_run остаётся success. Кабинеты независимы: пустой
+кабинет не подавляет заливки соседних кабинетов с данными.
+
 ## Формат extra в Airflow-коннекторе
 
 ```json
@@ -165,34 +174,42 @@ def cian_to_bq_and_s3_multi_account():
         bucket.patch()
 
     @task
-    def make_gcs_params(paths: list[str], dates: list[str], cabinet_id: str, **context) -> list[dict]:
-        sid = safe_id(context["run_id"])
+    def make_gcs_params(items: list[dict] | None, cabinet_id: str, **context) -> list[dict]:
+        items = list(items or [])   # None, когда XCom не записал ни один день (весь период пуст)
+        if not items:
+            return []               # ранний выход ДО чтения context["run_id"]: прямой вызов
+        sid = safe_id(context["run_id"])   # из теста без контекста иначе даст KeyError
         return [
-            {"src": path, "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"}
-            for path, d in zip(paths, dates)
+            {"src": it["path"], "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{it['date']}.json"}
+            for it in items
         ]
 
     @task
-    def make_bq_params(dates: list[str], cabinet_id: str, **context) -> list[dict]:
+    def make_bq_params(items: list[dict] | None, cabinet_id: str, **context) -> list[dict]:
+        items = list(items or [])   # строим из items, а не из dates — иначе load_bq
+        if not items:               # пошёл бы за GCS-объектом, которого нет за пустой день
+            return []               # ранний выход ДО чтения context["run_id"]
         sid = safe_id(context["run_id"])
         return [
             {
-                "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{d}.json"],
+                "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{it['date']}.json"],
                 "destination_project_dataset_table": (
-                    f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}_{cabinet_id}${d.replace('-', '')}"
+                    f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}_{cabinet_id}${it['date'].replace('-', '')}"
                 ),
             }
-            for d in dates
+            for it in items
         ]
 
     @task
-    def make_s3_params(paths: list[str], dates: list[str], cabinet_id: str) -> list[dict]:
+    def make_s3_params(items: list[dict] | None, cabinet_id: str) -> list[dict]:
+        items = list(items or [])
         params = []
-        for path, d in zip(paths, dates):
+        for it in items:
+            d = it["date"]
             year, month, day = d.split("-")
             date_compact = d.replace("-", "")
             params.append({
-                "filename": path,
+                "filename": it["path"],
                 "dest_key": (
                     f"{S3_PREFIX}/{cabinet_id}"
                     f"/_year={year}/_month={month}/_day={day}"
@@ -244,17 +261,17 @@ def cian_to_bq_and_s3_multi_account():
                 replace=True,
             )
 
-            paths      = collect.expand(date=dates).output
-            gcs_params = make_gcs_params(paths, dates, cabinet_id=cab_id)
-            bq_params  = make_bq_params(dates, cabinet_id=cab_id)
-            s3_params  = make_s3_params(paths, dates, cabinet_id=cab_id)
+            collected  = collect.expand(date=dates).output   # XComArg — список {"date","path"} только за дни с данными
+            gcs_params = make_gcs_params(collected, cabinet_id=cab_id)
+            bq_params  = make_bq_params(collected, cabinet_id=cab_id)
+            s3_params  = make_s3_params(collected, cabinet_id=cab_id)
 
             gcs_done = upload_gcs.expand_kwargs(gcs_params)
             bq_done  = load_bq.expand_kwargs(bq_params)
             s3_done  = upload_s3.expand_kwargs(s3_params)
 
             bucket_ready >> gcs_done >> bq_done
-            [bq_done, s3_done] >> cleanup(paths, cabinet_id=cab_id)
+            [bq_done, s3_done] >> cleanup(collected, cabinet_id=cab_id)
 
     accounts     = list_accounts(CIAN_CONN_ID)
     dates        = get_dates()

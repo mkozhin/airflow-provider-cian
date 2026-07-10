@@ -133,6 +133,104 @@ class TestMultiAccountDagTaskGroups:
         assert "cabinet_c_d" in task_group_ids
 
 
+def _get_cabinet_callable(mod, cabinet_id, task_id):
+    """Return the python_callable of a nested @task inside a cabinet TaskGroup.
+
+    Aggregators and cleanup are declared inside the DAG factory, wrapped in
+    @task and nested in a TaskGroup, so their task_id carries the group prefix
+    (``cabinet_<id>.<task_id>``). They are only reachable through the assembled
+    DAG object.
+    """
+    dag_obj = _get_dag_obj(mod)
+    return dag_obj.get_task(f"cabinet_{cabinet_id}.{task_id}").python_callable
+
+
+class TestMultiAccountAggregatorsEmptyPeriod:
+    """Aggregators over a None input (whole period empty for a cabinet).
+
+    When a cabinet's mapped ``collect`` writes no XCom, downstream receives
+    ``None`` (not ``[]``). Each aggregator must coerce with ``or []`` and — for
+    make_gcs_params / make_bq_params — return before reading context["run_id"],
+    otherwise a direct call without context raises KeyError even for None input.
+    """
+
+    def test_make_gcs_params_none_returns_empty(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_gcs_params = _get_cabinet_callable(mod, "aa", "make_gcs_params")
+        assert make_gcs_params(None, cabinet_id="aa") == []
+
+    def test_make_s3_params_none_returns_empty(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_s3_params = _get_cabinet_callable(mod, "aa", "make_s3_params")
+        assert make_s3_params(None, cabinet_id="aa") == []
+
+    def test_make_bq_params_none_returns_empty(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_bq_params = _get_cabinet_callable(mod, "aa", "make_bq_params")
+        assert make_bq_params(None, cabinet_id="aa") == []
+
+
+class TestMultiAccountAggregatorsWithData:
+    """Aggregators put cabinet_id into GCS/S3 keys and the BQ table name.
+
+    Each item is self-describing ({"date", "path"}), so date shifting via
+    zip(paths, dates) is impossible by construction.
+    """
+
+    ITEMS = [
+        {"date": "2024-01-01", "path": "/tmp/cian/aa/run1/2024-01-01.json"},
+        {"date": "2024-01-02", "path": "/tmp/cian/aa/run1/2024-01-02.json"},
+    ]
+
+    def test_make_gcs_params_contains_cabinet_id(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_gcs_params = _get_cabinet_callable(mod, "aa", "make_gcs_params")
+        params = make_gcs_params(self.ITEMS, cabinet_id="aa", run_id="run1")
+        assert len(params) == 2
+        assert params[0]["src"] == "/tmp/cian/aa/run1/2024-01-01.json"
+        assert "/aa/" in params[0]["dst"]
+        assert params[0]["dst"].endswith("2024-01-01.json")
+        assert params[1]["dst"].endswith("2024-01-02.json")
+
+    def test_make_s3_params_contains_cabinet_id_and_dates_not_shifted(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_s3_params = _get_cabinet_callable(mod, "aa", "make_s3_params")
+        params = make_s3_params(self.ITEMS, cabinet_id="aa")
+        assert len(params) == 2
+        assert params[0]["filename"] == "/tmp/cian/aa/run1/2024-01-01.json"
+        assert "/aa/" in params[0]["dest_key"]
+        assert "_date=20240101" in params[0]["dest_key"]
+        assert params[0]["dest_key"].endswith("2024-01-01.json")
+        assert "_date=20240102" in params[1]["dest_key"]
+        assert params[1]["dest_key"].endswith("2024-01-02.json")
+
+    def test_make_bq_params_contains_cabinet_id_in_table(self):
+        mod = _import_dag_module([Account(id="aa")])
+        make_bq_params = _get_cabinet_callable(mod, "aa", "make_bq_params")
+        params = make_bq_params(self.ITEMS, cabinet_id="aa", run_id="run1")
+        assert len(params) == 2
+        table0 = params[0]["destination_project_dataset_table"]
+        assert "builder_reports_aa$" in table0
+        assert table0.endswith("$20240101")
+        assert "/aa/" in params[0]["source_objects"][0]
+        assert params[0]["source_objects"][0].endswith("2024-01-01.json")
+        assert params[1]["destination_project_dataset_table"].endswith("$20240102")
+
+
+class TestMultiAccountCleanup:
+    """cleanup must tolerate an empty mapped result (None / [])."""
+
+    def test_cleanup_none_does_not_raise(self):
+        mod = _import_dag_module([Account(id="aa")])
+        cleanup = _get_cabinet_callable(mod, "aa", "cleanup")
+        assert cleanup(None, cabinet_id="aa", run_id="run1") is None
+
+    def test_cleanup_empty_list_does_not_raise(self):
+        mod = _import_dag_module([Account(id="aa")])
+        cleanup = _get_cabinet_callable(mod, "aa", "cleanup")
+        assert cleanup([], cabinet_id="aa", run_id="run1") is None
+
+
 class TestMultiAccountDagConstants:
     """Verify module-level constants and configuration."""
 
