@@ -508,10 +508,17 @@ Airflow).
 `MagicMock`, а не `MappedOperator` — и в собранном DAG-е нет ни `upload_gcs`, ни `upload_s3`,
 ни `load_bq`. Структурные ассерты по рёбрам и trigger rules на таком DAG-е проверяли бы пустоту.
 
-- [ ] добавить в `tests/example_stubs.py` **лёгкие реальные подклассы `BaseOperator`** для трёх transfer-операторов (`LocalFilesystemToGCSOperator`, `GCSToBigQueryOperator`, `LocalFilesystemToS3Operator`) с теми же `template_fields`, у которых `execute()` тривиален; они должны поддерживать `.partial()`/`.expand_kwargs()` как настоящие операторы
-- [ ] дать `_make_provider_stubs` (или отдельному хелперу — на усмотрение) режим, где transfer-операторы подставляются этими реальными подклассами, а не `MagicMock`; существующие импорт-тесты, которым хватает `MagicMock`, не ломать
-- [ ] написать тест: при подстановке реальных подклассов `.expand_kwargs(...)` регистрирует в DAG настоящий `MappedOperator` (защита от регрессии — иначе структурные ассерты задач 9-10 молча проверяют пустоту)
-- [ ] run tests — must pass before task 9
+- [x] добавить в `tests/example_stubs.py` **лёгкие реальные подклассы `BaseOperator`** для трёх transfer-операторов (`LocalFilesystemToGCSOperator`, `GCSToBigQueryOperator`, `LocalFilesystemToS3Operator`) с теми же `template_fields`, у которых `execute()` тривиален; они должны поддерживать `.partial()`/`.expand_kwargs()` как настоящие операторы
+- [x] дать `_make_provider_stubs` (или отдельному хелперу — на усмотрение) режим, где transfer-операторы подставляются этими реальными подклассами, а не `MagicMock`; существующие импорт-тесты, которым хватает `MagicMock`, не ломать — добавлен параметр `real_transfer_operators=False` в `_make_provider_stubs` и `import_dag_module`
+- [x] написать тест: при подстановке реальных подклассов `.expand_kwargs(...)` регистрирует в DAG настоящий `MappedOperator` (защита от регрессии — иначе структурные ассерты задач 9-10 молча проверяют пустоту) — тест в новом `tests/test_example_stubs.py` (плановый список Files назвал только `example_stubs.py`, но pytest-собираемый тест обязан жить в `test_*.py`)
+- [x] run tests — must pass before task 9 (169 passed)
+
+> ⚠️ **Замечание по реализации.** `partial()` валидирует kwargs против ИМЁН параметров
+> `__init__` (через `BaseOperatorMeta.__param_names`, выводимых из литеральной сигнатуры).
+> Голый `**kwargs` не проходит: `partial(gcp_conn_id=..., bucket=...)` бросает `TypeError`.
+> Поэтому каждый подкласс объявляет все свои provider-специфичные kwargs (и `partial`-,
+> и `expand_kwargs`-ключи) явными именованными параметрами `__init__` со значением `None`,
+> принимает и игнорирует их. Добавлен новый файл `tests/test_example_stubs.py`.
 
 ### Task 9: Структурные ассерты на собранном bq_and_s3_dag.py
 
