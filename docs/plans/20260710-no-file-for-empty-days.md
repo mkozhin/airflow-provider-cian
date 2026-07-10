@@ -437,19 +437,19 @@ Airflow).
 - Modify: `examples/bq_and_s3_dag.py`
 - Create: `tests/test_example_dag_v1.py`
 
-- [ ] перевести `make_gcs_params`, `make_s3_params`, `make_bq_params` на единственный вход `items` (убрать `dates` и `zip`)
-- [ ] в каждом агрегаторе первой строкой `items = list(items or [])` — иначе полностью пустой период валит DAG (факт №2 в Context)
-- [ ] `make_bq_params` строить из `items`, а не из `dates` (сейчас определён на `:144`, вызывается на `:225`) — иначе `load_bq` пойдёт за несуществующим GCS-объектом
-- [ ] `cleanup` (`:175`) перевести на `items`, брать `os.path.dirname(items[0]["path"])`
-- [ ] обновить блок «Execution & dependencies» (`:220-234`): `collected = collect.expand(date=dates).output`, агрегаторы от `collected`
-- [ ] обновить аннотации агрегаторов и `cleanup`: вход больше не `list[str]`, а `list[dict] | None`
-- [ ] обновить docstring DAG: mapped-таски заливки создаются только за дни с данными; полностью пустой период → `upload_*`/`load_bq` в `skipped`
-- [ ] создать `tests/test_example_dag_v1.py` с импорт-тестом DAG (v1 сейчас не покрыт; переиспользовать `_make_provider_stubs`) — это написание с нуля, а не обновление
-- [ ] доступ к агрегаторам и `cleanup` только через `dag.get_task("<task_id>").python_callable` — они объявлены внутри DAG-фабрики и обёрнуты в `@task`, напрямую не вызываются
-- [ ] **написать тесты на `None`-путь: `make_gcs_params(None) == []`, `make_s3_params(None) == []`, `make_bq_params(None) == []`** — это самая тонкая точка всей правки (эмпирический факт №2), и держаться она должна на прямом ассерте, а не на импорт-тесте
-- [ ] написать тест: агрегаторы на списке из двух словарей дают ключи ровно за эти две даты (даты не смещены)
-- [ ] написать тест: `cleanup(None)` и `cleanup([])` не падают
-- [ ] run tests — must pass before task 6
+- [x] перевести `make_gcs_params`, `make_s3_params`, `make_bq_params` на единственный вход `items` (убрать `dates` и `zip`)
+- [x] в каждом агрегаторе первой строкой `items = list(items or [])` — иначе полностью пустой период валит DAG (факт №2 в Context)
+- [x] `make_bq_params` строить из `items`, а не из `dates` (сейчас определён на `:144`, вызывается на `:225`) — иначе `load_bq` пойдёт за несуществующим GCS-объектом
+- [x] `cleanup` (`:175`) перевести на `items`, брать `os.path.dirname(items[0]["path"])`
+- [x] обновить блок «Execution & dependencies» (`:220-234`): `collected = collect.expand(date=dates).output`, агрегаторы от `collected`
+- [x] обновить аннотации агрегаторов и `cleanup`: вход больше не `list[str]`, а `list[dict] | None`
+- [x] обновить docstring DAG: mapped-таски заливки создаются только за дни с данными; полностью пустой период → `upload_*`/`load_bq` в `skipped`
+- [x] создать `tests/test_example_dag_v1.py` с импорт-тестом DAG (v1 сейчас не покрыт; переиспользовать `_make_provider_stubs`) — это написание с нуля, а не обновление
+- [x] доступ к агрегаторам и `cleanup` только через `dag.get_task("<task_id>").python_callable` — они объявлены внутри DAG-фабрики и обёрнуты в `@task`, напрямую не вызываются
+- [x] **написать тесты на `None`-путь: `make_gcs_params(None) == []`, `make_s3_params(None) == []`, `make_bq_params(None) == []`** — это самая тонкая точка всей правки (эмпирический факт №2), и держаться она должна на прямом ассерте, а не на импорт-тесте
+- [x] написать тест: агрегаторы на списке из двух словарей дают ключи ровно за эти две даты (даты не смещены)
+- [x] написать тест: `cleanup(None)` и `cleanup([])` не падают
+- [x] run tests — must pass before task 6
 
 ### Task 6: Пример bq_and_s3_multi_account_dag.py — то же на уровне кабинета
 

@@ -13,6 +13,12 @@ load_bq загружает из GCS в BigQuery (партиция table$YYYYMMDD
 upload_s3 кладёт файл в S3-совместимое хранилище в Hive-партиции:
   {S3_PREFIX}/_year={YYYY}/_month={MM}/_day={DD}/_date={YYYYMMDD}/{date}.json
 cleanup удаляет директорию запуска со всеми файлами после завершения всех загрузок.
+
+Пустой день: collect за день без данных возвращает None и не пишет XCom, поэтому
+mapped-таски заливки (upload_gcs/upload_s3/load_bq) разворачиваются только за дни
+с данными. Если пуст весь период, агрегаторы получают None, возвращают [], и
+upload_*/load_bq разворачиваются в ноль инстансов — Airflow помечает их skipped,
+а dag_run остаётся success.
 """
 
 from __future__ import annotations
@@ -133,32 +139,36 @@ def cian_to_bq_and_s3():
         return date_range(p["date_from"], p["date_to"])
 
     @task
-    def make_gcs_params(paths: list[str], dates: list[str], run_id: str | None = None) -> list[dict]:
+    def make_gcs_params(items: list[dict] | None, run_id: str | None = None) -> list[dict]:
+        items = list(items or [])   # None, когда XCom не записал ни один день (весь период пуст)
         sid = safe_id(run_id)
         return [
-            {"src": path, "dst": f"{GCS_PREFIX}/{sid}/{d}.json"}
-            for path, d in zip(paths, dates)
+            {"src": it["path"], "dst": f"{GCS_PREFIX}/{sid}/{it['date']}.json"}
+            for it in items
         ]
 
     @task
-    def make_bq_params(dates: list[str], run_id: str | None = None) -> list[dict]:
-        sid = safe_id(run_id)
+    def make_bq_params(items: list[dict] | None, run_id: str | None = None) -> list[dict]:
+        items = list(items or [])   # строим из items, а не из dates — иначе load_bq
+        sid = safe_id(run_id)       # пошёл бы за GCS-объектом, которого нет за пустой день
         return [
             {
-                "source_objects":                    [f"{GCS_PREFIX}/{sid}/{d}.json"],
-                "destination_project_dataset_table": f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}${d.replace('-', '')}",
+                "source_objects":                    [f"{GCS_PREFIX}/{sid}/{it['date']}.json"],
+                "destination_project_dataset_table": f"{BQ_PROJECT}.{BQ_DATASET}.{BQ_TABLE}${it['date'].replace('-', '')}",
             }
-            for d in dates
+            for it in items
         ]
 
     @task
-    def make_s3_params(paths: list[str], dates: list[str]) -> list[dict]:
+    def make_s3_params(items: list[dict] | None) -> list[dict]:
+        items = list(items or [])
         params = []
-        for path, d in zip(paths, dates):
+        for it in items:
+            d = it["date"]
             year, month, day = d.split("-")
             date_compact = d.replace("-", "")
             params.append({
-                "filename": path,
+                "filename": it["path"],
                 "dest_key": f"{S3_PREFIX}/_year={year}/_month={month}/_day={day}/_date={date_compact}/{d}.json",
             })
         return params
@@ -174,10 +184,11 @@ def cian_to_bq_and_s3():
         bucket.patch()
 
     @task(trigger_rule="all_done")
-    def cleanup(paths: list[str]) -> None:
-        if not paths:
+    def cleanup(items: list[dict] | None) -> None:
+        items = list(items or [])
+        if not items:
             return
-        run_dir = os.path.dirname(paths[0])
+        run_dir = os.path.dirname(items[0]["path"])
         if not os.path.isdir(run_dir):
             return
         for fname in os.listdir(run_dir):
@@ -220,10 +231,10 @@ def cian_to_bq_and_s3():
     # ── Execution & dependencies ──────────────────────────────────────────────
 
     dates      = get_dates()
-    paths      = collect.expand(date=dates).output   # XComArg, не MappedOperator
-    gcs_params = make_gcs_params(paths, dates)
-    bq_params  = make_bq_params(dates)
-    s3_params  = make_s3_params(paths, dates)
+    collected  = collect.expand(date=dates).output   # XComArg — список {"date","path"} только за дни с данными
+    gcs_params = make_gcs_params(collected)
+    bq_params  = make_bq_params(collected)
+    s3_params  = make_s3_params(collected)
 
     bucket_ready = ensure_gcs_bucket()
     gcs_done     = upload_gcs.expand_kwargs(gcs_params)
@@ -231,7 +242,7 @@ def cian_to_bq_and_s3():
     s3_done      = upload_s3.expand_kwargs(s3_params)
 
     bucket_ready >> gcs_done >> bq_done      # сначала бакет, потом загрузка, потом BQ
-    [bq_done, s3_done] >> cleanup(paths)     # папку удаляем после завершения всех загрузок
+    [bq_done, s3_done] >> cleanup(collected)  # папку удаляем после завершения всех загрузок
 
 
 cian_to_bq_and_s3()
