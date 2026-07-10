@@ -403,19 +403,19 @@ Airflow).
 - Modify: `tests/test_example_dag_multi_account.py`
 - Create: `tests/test_example_dag_v2.py`
 
-- [ ] в `process_date` принять результат `execute()`, при `None` вернуть `None` до всех заливок (GCS, BQ, S3)
-- [ ] при непустом результате взять `local_path = result["path"]`
-- [ ] обновить аннотацию `process_date` с `-> str` на `-> str | None` и её docstring
-- [ ] проверить `cleanup` (`:197`) на устойчивость к `None`/пустому списку
-- [ ] обновить docstring DAG: за пустой день заливок нет, `process_date` возвращает `None` и остаётся `success`; **отдельных mapped upload-тасков в v2 нет, поэтому `skipped` тут не появляется никогда** (в отличие от v1/multi-account)
-- [ ] **вынести `_make_provider_stubs` из `tests/test_example_dag_multi_account.py:40-74` в общий `tests/example_stubs.py`** и переключить существующий тест на него — заглушки теперь нужны трём тестовым модулям
-- [ ] **расширить заглушки для v2**: существующие покрывают только transfer-операторы, а v2 импортирует `S3Hook` (`:25`), `BigQueryHook` (`:26`), `GCSHook` (`:27`), `google.api_core.exceptions.Conflict` (`:28`) и `google.cloud.bigquery` (`:29`) — без них тест упадёт на импорте, а positive-path не сможет создать `SchemaField`/`LoadJobConfig`
-- [ ] создать `tests/test_example_dag_v2.py` с импорт-тестом DAG — сейчас v2 не покрыт вообще
-- [ ] доступ к вложенным `@task`-функциям только через `dag.get_task("process_date").python_callable` / `dag.get_task("cleanup").python_callable`
-- [ ] написать тест `cleanup(None)` и `cleanup([])` не падают
-- [ ] написать тест: `process_date` при `execute() → None` не вызывает ни GCSHook, ни BigQueryHook, ни S3Hook (моки; проверить, что заливки действительно не произошло)
-- [ ] написать тест: `process_date` при непустом результате берёт путь из `result["path"]` и вызывает все три заливки
-- [ ] run tests — must pass before task 4
+- [x] в `process_date` принять результат `execute()`, при `None` вернуть `None` до всех заливок (GCS, BQ, S3)
+- [x] при непустом результате взять `local_path = result["path"]`
+- [x] обновить аннотацию `process_date` с `-> str` на `-> str | None` и её docstring
+- [x] проверить `cleanup` (`:197`) на устойчивость к `None`/пустому списку — уже начинается с `if not paths: return`, покрывает и `None`, и `[]`; правка не нужна (покрыто тестами)
+- [x] обновить docstring DAG: за пустой день заливок нет, `process_date` возвращает `None` и остаётся `success`; **отдельных mapped upload-тасков в v2 нет, поэтому `skipped` тут не появляется никогда** (в отличие от v1/multi-account)
+- [x] **вынести `_make_provider_stubs` из `tests/test_example_dag_multi_account.py:40-74` в общий `tests/example_stubs.py`** и переключить существующий тест на него — заглушки теперь нужны трём тестовым модулям
+- [x] **расширить заглушки для v2**: существующие покрывают только transfer-операторы, а v2 импортирует `S3Hook` (`:25`), `BigQueryHook` (`:26`), `GCSHook` (`:27`), `google.api_core.exceptions.Conflict` (`:28`) и `google.cloud.bigquery` (`:29`) — без них тест упадёт на импорте, а positive-path не сможет создать `SchemaField`/`LoadJobConfig`
+- [x] создать `tests/test_example_dag_v2.py` с импорт-тестом DAG — сейчас v2 не покрыт вообще
+- [x] доступ к вложенным `@task`-функциям только через `dag.get_task("process_date").python_callable` / `dag.get_task("cleanup").python_callable`
+- [x] написать тест `cleanup(None)` и `cleanup([])` не падают
+- [x] написать тест: `process_date` при `execute() → None` не вызывает ни GCSHook, ни BigQueryHook, ни S3Hook (моки; проверить, что заливки действительно не произошло)
+- [x] написать тест: `process_date` при непустом результате берёт путь из `result["path"]` и вызывает все три заливки
+- [x] run tests — must pass before task 4
 
 ### Task 4: Пример builder_reports_dag.py — cleanup под новый контракт XCom
 

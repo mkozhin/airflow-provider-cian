@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import importlib
 import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from airflow_provider_cian.accounts import Account
+from tests.example_stubs import _make_provider_stubs
 
 _MOD_NAME = "examples.bq_and_s3_multi_account_dag"
 # The DAG module calls list_accounts at import time.
@@ -16,62 +16,6 @@ _MOD_NAME = "examples.bq_and_s3_multi_account_dag"
 # causes the module to bind the mock. Patching the DAG module's own namespace would only work
 # after the module is already loaded.
 _PATCH_TARGET = "airflow_provider_cian.accounts.list_accounts"
-
-# Provider sub-packages that are not installed in the test environment.
-# NOTE: do NOT include "airflow.providers" — it is a real namespace package.
-_MISSING_PROVIDERS = [
-    "airflow.providers.amazon",
-    "airflow.providers.amazon.aws",
-    "airflow.providers.amazon.aws.transfers",
-    "airflow.providers.amazon.aws.transfers.local_to_s3",
-    "airflow.providers.google",
-    "airflow.providers.google.cloud",
-    "airflow.providers.google.cloud.hooks",
-    "airflow.providers.google.cloud.hooks.gcs",
-    "airflow.providers.google.cloud.transfers",
-    "airflow.providers.google.cloud.transfers.gcs_to_bigquery",
-    "airflow.providers.google.cloud.transfers.local_to_gcs",
-    "google",
-    "google.api_core",
-    "google.api_core.exceptions",
-]
-
-
-def _make_provider_stubs() -> dict[str, types.ModuleType]:
-    """Build a dict of stub modules to inject into sys.modules."""
-    stubs: dict[str, types.ModuleType] = {}
-
-    for name in _MISSING_PROVIDERS:
-        if name in sys.modules:
-            continue
-        mod = types.ModuleType(name)
-        stubs[name] = mod
-
-    def _get(name: str) -> types.ModuleType:
-        return stubs.get(name, sys.modules.get(name, types.ModuleType(name)))
-
-    gcs_mod = _get("airflow.providers.google.cloud.hooks.gcs")
-    gcs_mod.GCSHook = MagicMock(name="GCSHook")
-
-    gcs_to_bq_mod = _get("airflow.providers.google.cloud.transfers.gcs_to_bigquery")
-    GCSToBQ = MagicMock(name="GCSToBigQueryOperator")
-    GCSToBQ.partial = MagicMock(return_value=MagicMock())
-    gcs_to_bq_mod.GCSToBigQueryOperator = GCSToBQ
-
-    local_to_gcs_mod = _get("airflow.providers.google.cloud.transfers.local_to_gcs")
-    LocalToGCS = MagicMock(name="LocalFilesystemToGCSOperator")
-    LocalToGCS.partial = MagicMock(return_value=MagicMock())
-    local_to_gcs_mod.LocalFilesystemToGCSOperator = LocalToGCS
-
-    s3_mod = _get("airflow.providers.amazon.aws.transfers.local_to_s3")
-    LocalToS3 = MagicMock(name="LocalFilesystemToS3Operator")
-    LocalToS3.partial = MagicMock(return_value=MagicMock())
-    s3_mod.LocalFilesystemToS3Operator = LocalToS3
-
-    google_exceptions = _get("google.api_core.exceptions")
-    google_exceptions.Conflict = type("Conflict", (Exception,), {})
-
-    return stubs
 
 
 def _import_dag_module(mock_accounts: list[Account]):

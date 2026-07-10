@@ -12,6 +12,12 @@ DAG v2 (оптимизированный): сбор Cian Builder Reports → Big
   ensure_gcs_bucket ──┐
                        ├─→ process_date (×N дат, pool=cian_pool) → cleanup
   get_dates ──────────┘
+
+Пустой день (Cian вернул ``reports: []``): оператор не создаёт файл, а
+``process_date`` возвращает ``None`` и остаётся ``success`` — заливок за этот
+день нет вовсе. В отличие от v1/multi-account, здесь НЕТ отдельных mapped
+upload-тасков (GCS/BQ/S3 вызываются внутри ``process_date``), поэтому статус
+``skipped`` тут не появляется никогда — даже когда пуст весь период.
 """
 
 from __future__ import annotations
@@ -137,19 +143,31 @@ def cian_to_bq_and_s3_v2():
         bucket.patch()
 
     @task(pool=POOL)
-    def process_date(date: str, run_id: str | None = None) -> str:
+    def process_date(date: str, run_id: str | None = None) -> str | None:
+        """Собрать данные Cian за дату и залить в GCS/BigQuery/S3.
+
+        За пустой день (Cian вернул ``reports: []``) оператор не создаёт файл и
+        возвращает ``None`` — тогда заливок нет вовсе (ни GCS, ни BQ, ни S3),
+        а сам ``process_date`` остаётся ``success`` и возвращает ``None``.
+        За день с данными возвращается путь к локальному файлу.
+        """
         sid          = safe_id(run_id)
         date_compact = date.replace("-", "")
         gcs_path     = f"{GCS_PREFIX}/{sid}/{date}.json"
 
         # 1. Сбор данных из API → локальный файл
-        local_path = CianBuilderReportsOperator(
+        result = CianBuilderReportsOperator(
             task_id="_collect",
             cian_conn_id=CIAN_CONN_ID,
             date=date,
             base_dir=BASE_DIR,
             output_format="json",
         ).execute({"run_id": run_id or ""})
+
+        # Пустой день: файла нет — пропускаем все заливки.
+        if result is None:
+            return None
+        local_path = result["path"]
 
         # 2. Локальный файл → GCS (промежуточное хранилище для BQ)
         GCSHook(gcp_conn_id=GCP_CONN_ID).upload(
