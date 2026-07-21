@@ -183,7 +183,7 @@ See `examples/bq_and_s3_multi_account_dag.py` for a full working example with GC
 
 `airflow_provider_cian.accounts` also exposes two lower-level helpers used by the hook and operator. DAG authors typically do not need these directly:
 
-- `resolve_cabinet_id(conn_id, account_id)` — returns the **sanitized** cabinet id for an operation. In multi-account mode (`account_id` is set) it returns `Account(id=account_id).id` without reading the connection. In single-account mode it reads `conn.login` lazily and returns its sanitized form (or `None` if unset). Sanitization is idempotent, so a value already coming from `list_accounts()` is unchanged.
+- `resolve_cabinet_id(conn_id, account_id)` — returns the **sanitized** cabinet id for an operation. In multi-account mode (`account_id` is set) it returns `sanitize_id(account_id)` without reading the connection. In single-account mode it reads `conn.login` lazily and returns its sanitized form (or `None` if unset). Sanitization is idempotent, so a value already coming from `list_accounts()` is unchanged.
 - `resolve_token(conn, account_id)` — returns the authentication token. In multi-account mode it finds the first entry in `conn.extra.accounts` whose **sanitized** id matches the sanitized `account_id` (canonical lookup key), so a raw `account_id` like `"a.b"` matches an entry stored as `"a.b"` or `"a_b"`. In single-account mode it returns `conn.password`. Raises `AirflowException` when the token cannot be resolved.
 
 ## Example DAG
