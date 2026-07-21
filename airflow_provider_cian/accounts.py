@@ -79,13 +79,17 @@ def list_accounts(conn_id: str) -> list[Account]:
 def resolve_cabinet_id(conn_id: str, account_id: str | None) -> str | None:
     """Resolve the cabinet id for an operation.
 
-    In multi-account mode (account_id is not None): returns account_id directly,
-    without reading the connection.
+    In multi-account mode (account_id is not None): returns the sanitized
+    account_id (Account(id=account_id).id), without reading the connection. An
+    empty string stays empty (sanitization of "" is "").
     In single-account mode (account_id is None): reads the connection lazily and
     returns Account(id=conn.login).id if conn.login is set, otherwise None.
+
+    Sanitization is uniform with resolve_token and the file path, so the
+    operator works everywhere with one canonical (sanitized) Account ID form.
     """
     if account_id is not None:
-        return account_id
+        return Account(id=account_id).id
     conn = BaseHook.get_connection(conn_id)
     if conn.login:
         return Account(id=conn.login).id
@@ -96,15 +100,19 @@ def resolve_token(conn: Connection, account_id: str | None) -> str:
     """Resolve the authentication token for a request.
 
     In multi-account mode (account_id is not None): finds the first account
-    matching account_id in conn.extra.accounts and returns its token.
+    whose sanitized id matches the sanitized account_id in conn.extra.accounts
+    and returns its token. The search key is sanitized once via
+    Account(id=account_id).id so a raw account_id (e.g. "a.b") matches an
+    entry stored raw or sanitized — both canonicalize to the same form.
     In single-account mode (account_id is None): returns conn.password.
 
     Raises AirflowException with exact error messages matching current _make_request
     behavior. No warnings are logged (execution-time policy).
     """
     if account_id is not None:
+        canonical = Account(id=account_id).id
         for acc, token in _parse_accounts(conn):
-            if acc.id == account_id:
+            if acc.id == canonical:
                 if not token:
                     raise AirflowException(
                         f"Account id={account_id!r} found in connection "

@@ -216,6 +216,27 @@ class TestResolveCabinetId:
         assert result == "some_account"
         mock_get.assert_not_called()
 
+    def test_multi_mode_sanitizes_raw_account_id(self):
+        with patch("airflow.hooks.base.BaseHook.get_connection") as mock_get:
+            result = resolve_cabinet_id("cian_test", "a.b")
+
+        assert result == "a_b"
+        mock_get.assert_not_called()
+
+    def test_multi_mode_sanitization_is_idempotent(self):
+        with patch("airflow.hooks.base.BaseHook.get_connection") as mock_get:
+            result = resolve_cabinet_id("cian_test", "a_b")
+
+        assert result == "a_b"
+        mock_get.assert_not_called()
+
+    def test_multi_mode_empty_string_stays_empty(self):
+        with patch("airflow.hooks.base.BaseHook.get_connection") as mock_get:
+            result = resolve_cabinet_id("cian_test", "")
+
+        assert result == ""
+        mock_get.assert_not_called()
+
     def test_single_mode_with_login_returns_sanitized_id(self):
         conn = _make_conn(login="my.cabinet")
         with patch("airflow.hooks.base.BaseHook.get_connection", return_value=conn):
@@ -258,6 +279,18 @@ class TestResolveToken:
         # account_id is the sanitized form
         result = resolve_token(conn, "a_b")
         assert result == "dotted-token"
+
+    def test_multi_mode_finds_token_by_raw_account_id(self):
+        """A raw account_id ('a.b') matches an entry stored raw ('a.b'):
+        both canonicalize to 'a_b'."""
+        conn = _make_conn(accounts=[{"id": "a.b", "token": "dotted-token"}])
+        result = resolve_token(conn, "a.b")
+        assert result == "dotted-token"
+
+    def test_multi_mode_raw_account_id_still_raises_for_absent_account(self):
+        conn = _make_conn(conn_id="cian_test", accounts=[{"id": "a.b", "token": "tok"}])
+        with pytest.raises(AirflowException, match="not found in connection"):
+            resolve_token(conn, "x.y")
 
     def test_single_mode_returns_conn_password(self):
         conn = _make_conn(password="my-password")
