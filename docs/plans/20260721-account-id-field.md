@@ -151,13 +151,13 @@
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] verify: поле `account_id` присутствует в каждой строке JSON и CSV сразу после `id`, со значением (не только в заголовке)
-- [ ] verify: без `login` (single-account) и с `account_id=""` таск падает с понятной ошибкой до создания hook и запроса к API
-- [ ] verify: multi-account и single-account режимы дают правильные (санитизированные) значения `account_id`, сырой ввод работает end-to-end включая поиск токена
-- [ ] verify: все три `BQ_SCHEMA` в примерах согласованы с `_CSV_FIELDS`, новое поле — полным словарём
-- [ ] verify: в README/README_ru не осталось описаний пути без сегмента кабинета (матрица разрешения, фраза про опциональный `Login`)
-- [ ] run full test suite: `pytest`
-- [ ] verify: все утверждения о количестве полей в коде, тестах, README и CONTEXT.md корректны — «18 fields», «19th field»/«19-е поле» для `snapshot_ts`, докстринги (исторические записи CHANGELOG.md не трогать); нет мёртвых веток `cabinet_id is None`
+- [x] verify: поле `account_id` присутствует в каждой строке JSON и CSV сразу после `id`, со значением (не только в заголовке)
+- [x] verify: без `login` (single-account) и с `account_id=""` таск падает с понятной ошибкой до создания hook и запроса к API
+- [x] verify: multi-account и single-account режимы дают правильные (санитизированные) значения `account_id`, сырой ввод работает end-to-end включая поиск токена
+- [x] verify: все три `BQ_SCHEMA` в примерах согласованы с `_CSV_FIELDS`, новое поле — полным словарём
+- [x] verify: в README/README_ru не осталось описаний пути без сегмента кабинета (матрица разрешения, фраза про опциональный `Login`)
+- [x] run full test suite: `pytest`
+- [x] verify: все утверждения о количестве полей в коде, тестах, README и CONTEXT.md корректны — «18 fields», «19th field»/«19-е поле» для `snapshot_ts`, докстринги (исторические записи CHANGELOG.md не трогать); нет мёртвых веток `cabinet_id is None`
 
 ### Task 7: [Final] Move plan to completed
 
