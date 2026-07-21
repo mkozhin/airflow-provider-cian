@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-07-21
+
+- **BREAKING**: every output record (JSON and CSV) now carries a new `account_id` field, inserted as the second field right after `id`. The base schema grows from 18 to 19 fields (`snapshot_ts` becomes the 20th field in JSON when `add_snapshot_ts=True`). The value is the sanitized Account ID of the cabinet — the same value used in the file path — so records from different cabinets can be told apart in the data itself, not only from the file path
+- **BREAKING**: `login` is now **required** in single-account mode. `CianBuilderReportsOperator.execute()` raises `AirflowException` (before creating the hook or hitting the API) when neither `account_id` nor `conn.login` yields a non-empty Account ID; the previous behaviour of writing files to a path without a cabinet segment is removed
+- **BREAKING**: the output file path always contains the `<account_id>` segment (`{base_dir}/{account_id}/{run_id}/{date}.{ext}`); it can no longer be `{base_dir}/{run_id}/{date}.{ext}`
+- **BREAKING**: `resolve_cabinet_id` and `resolve_token` now sanitize the `account_id` (`[^\w-]` → `_`) uniformly — `resolve_cabinet_id` returns the sanitized value and `resolve_token` looks up the token by the canonical (sanitized) key. Callers that passed a raw `account_id` with special characters directly will see the sanitized form in the path, data and token lookup (sanitization is idempotent for values coming from `list_accounts()`, so the normal DAG path is unaffected)
+- Changed: the example DAGs' `BQ_SCHEMA` gains the `account_id STRING NULLABLE` column (v1/v2: 19 fields; multi-account with `snapshot_ts`: 20 fields) — downstream BigQuery tables must add this column before deploying 0.5.0, as the load jobs use `ignore_unknown_values=False`
+
 ## [0.4.0] - 2026-07-10
 
 - **BREAKING**: `CianBuilderReportsOperator.execute()` return type changed from `str` to `dict | None`. A day with data now returns a self-describing dict `{"date": ..., "path": ...}`; an empty day (`reports: []`) returns `None` and writes **no file** and **no XCom**. DAGs (and XCom consumers) that read the `collect` result as a path string must unwrap `item["path"]`, and aggregators must start with `items = list(items or [])` because a fully empty period makes Airflow hand them `None`, not `[]`

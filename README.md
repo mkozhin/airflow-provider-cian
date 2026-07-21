@@ -27,9 +27,15 @@ Create an HTTP connection in Airflow (Admin → Connections):
 | Connection Id | `cian_default` (or any name) |
 | Connection Type | `HTTP` |
 | Host | `https://public-api.cian.ru` |
+| Login | **Account ID** — a label for this cabinet (**required**) |
 | Password | Bearer token from your Cian Builder cabinet |
 
 The provider reads `conn.host` as base URL and `conn.password` as Bearer token.
+`Login` is **required**: it is written into every output record as `account_id` and
+into the file path as the cabinet segment. Without it the task fails with
+`AirflowException` before any API request. The value is a label you choose (Cian's
+API does not expose a real cabinet ID); a good choice is the legal entity's INN or
+name from your contract.
 
 ### Multiple accounts
 
@@ -44,7 +50,7 @@ To collect data from several Cian cabinets using a single connection, put tokens
 }
 ```
 
-The `id` can be any string that uniquely identifies the cabinet (e.g. the numeric cabinet ID from Cian). Non-alphanumeric characters are sanitised to `_` for use in file paths and BigQuery table names.
+The `id` is a **label you choose** that uniquely identifies the cabinet — Cian's API does not expose a real cabinet ID, so this is not a value from Cian (a good choice is the legal entity's INN or name from your contract). Non-alphanumeric characters are sanitised (`[^\w-]` → `_`) uniformly wherever the id is used: file paths, BigQuery table names, token lookup and the `account_id` field written into every output record.
 
 ### Token resolution
 
@@ -88,30 +94,31 @@ For an **empty day** (Cian returned `reports: []`), the operator writes **no fil
 
 **Broken API response.** A 200 response without `result.reports` (or with a non-list there) now **fails** the task with `AirflowException` instead of being silently treated as an empty day.
 
-Output file path depends on how the cabinet ID is resolved:
+The output file path always contains the cabinet segment (the sanitized Account ID):
 
 | `account_id` | `conn.login` | Path |
 |---|---|---|
-| not set | not set | `{base_dir}/{run_id}/{date}.{ext}` |
+| not set | not set | **error** — `AirflowException` (Account ID is required) |
 | not set | `"123"` | `{base_dir}/123/{run_id}/{date}.{ext}` |
 | `"123"` | any | `{base_dir}/123/{run_id}/{date}.{ext}` |
 
-In single-account mode, setting `Login` on the connection acts as a cabinet ID for path isolation.
+In single-account mode, `Login` on the connection is **required** and supplies the Account ID for both the file path and the `account_id` field. If neither `account_id` nor `Login` is set, the task fails with `AirflowException` before any API request.
 
 ### Output Schema
 
-Base schema (18 fields) — present in all records regardless of format:
+Base schema (19 fields) — present in all records regardless of format:
 
-`id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
+`id`, `account_id`, `newbuilding_id`, `newbuilding_name`, `date`, `datetime`, `action_type`, `searcher_phone`,
 `searcher_ct_phone`, `builder_user_ct_phone`, `builder_user_phone`, `builder_sip_uri`,
 `call_duration`, `tariff_price`, `auction_bet`, `cashback_spent`, `billing_price`,
 `has_claim`, `is_targeted`
 
+- `account_id` — the sanitized Account ID of the cabinet this record belongs to (second field, right after `id`); same value as the file-path segment. Lets you tell records from different cabinets apart in the data itself, not only from the file path
 - `date` — collection date (`YYYY-MM-DD`), always equals the operator's `date` parameter; safe for BigQuery date partitioning
 - `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`)
 - `is_targeted` is computed: `billing_price > 0`.
 
-When `add_snapshot_ts=True` and `output_format='json'`, each record also contains a 19th field:
+When `add_snapshot_ts=True` and `output_format='json'`, each record also contains a 20th field:
 
 - `snapshot_ts` — `dag_run.start_date` formatted as `YYYY-MM-DDTHH:MM:SS` (naive UTC, no timezone offset). All records within a single DAG run share the same value.
 
@@ -148,9 +155,9 @@ FROM cian_calls
 ORDER BY id, snapshot_ts
 ```
 
-> **BigQuery note:** the example `BQ_SCHEMA` in `examples/` is fixed at 18 fields. When `add_snapshot_ts=True`, either add a `snapshot_ts STRING` column to the schema or use `ignore_unknown_values=True` on the load job — otherwise BigQuery will reject records with the extra field.
+> **BigQuery note:** the base `BQ_SCHEMA` in the v1 and v2 examples (`bq_and_s3_dag.py`, `bq_and_s3_dag_v2.py`) is fixed at **19 fields** (including `account_id`). The multi-account example (`bq_and_s3_multi_account_dag.py`) uses `add_snapshot_ts=True`, so its schema has **20 fields** (base 19 + `snapshot_ts`). When enabling `add_snapshot_ts=True` on a 19-field schema, either add a `snapshot_ts STRING` column or use `ignore_unknown_values=True` on the load job — otherwise BigQuery will reject records with the extra field.
 
-> **JSON only:** `add_snapshot_ts=True` has no effect when `output_format='csv'`. The CSV schema remains 18 fields.
+> **JSON only:** `add_snapshot_ts=True` has no effect when `output_format='csv'`. The CSV schema remains 19 fields.
 
 ## Multi-Account Support
 
@@ -176,8 +183,8 @@ See `examples/bq_and_s3_multi_account_dag.py` for a full working example with GC
 
 `airflow_provider_cian.accounts` also exposes two lower-level helpers used by the hook and operator. DAG authors typically do not need these directly:
 
-- `resolve_cabinet_id(conn_id, account_id)` — returns the cabinet id for an operation. In multi-account mode (`account_id` is set) it returns `account_id` immediately without reading the connection. In single-account mode it reads `conn.login` lazily.
-- `resolve_token(conn, account_id)` — returns the authentication token. In multi-account mode it finds the first matching entry in `conn.extra.accounts`. In single-account mode it returns `conn.password`. Raises `AirflowException` when the token cannot be resolved.
+- `resolve_cabinet_id(conn_id, account_id)` — returns the **sanitized** cabinet id for an operation. In multi-account mode (`account_id` is set) it returns `Account(id=account_id).id` without reading the connection. In single-account mode it reads `conn.login` lazily and returns its sanitized form (or `None` if unset). Sanitization is idempotent, so a value already coming from `list_accounts()` is unchanged.
+- `resolve_token(conn, account_id)` — returns the authentication token. In multi-account mode it finds the first entry in `conn.extra.accounts` whose **sanitized** id matches the sanitized `account_id` (canonical lookup key), so a raw `account_id` like `"a.b"` matches an entry stored as `"a.b"` or `"a_b"`. In single-account mode it returns `conn.password`. Raises `AirflowException` when the token cannot be resolved.
 
 ## Example DAG
 
