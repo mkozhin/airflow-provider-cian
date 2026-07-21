@@ -99,16 +99,16 @@
 - Modify: `airflow_provider_cian/operators/builder_reports.py`
 - Modify: `tests/operators/test_builder_reports.py`
 
-- [ ] вставить `"account_id"` в `_CSV_FIELDS` после `"id"`; обновить комментарий про 18 → 19 полей
-- [ ] `_enrich(records, hook, account_id, snapshot_ts=None)`: добавить параметр, вставить `"account_id": account_id` в `row` сразу после `"id"`; в `execute()` передавать локальный `cabinet_id` (санитизированный результат `resolve_cabinet_id()`), НЕ `self.account_id` — в данные должно попасть ровно то же значение, что и в путь
-- [ ] обновить существующие тесты `TestEnrich` под новую сигнатуру
-- [ ] написать тесты: JSON-строки содержат `account_id` с ожидаемым значением и ключ идёт сразу после `id`; CSV-заголовок содержит `account_id` второй колонкой
-- [ ] написать тесты: фактические значения в CSV-строках — прочитать файл через `csv.DictReader` и проверить `row["account_id"]` в single-account и multi-account режимах (несколько строк)
-- [ ] написать тест: multi-account режим (`account_id` передан) — в строках именно `account_id`, а не `login`; при сыром `account_id="a.b"` в строках и в пути одинаковое санитизированное `"a_b"`
-- [ ] написать тест: single-account с `login` — в строках санитизированный `Account(id=login).id`
-- [ ] обновить хардкод-проверки количества колонок: `TestWrite::test_csv_creates_file_with_header` (`== 18` → `== 19`), `TestSnapshotTs::test_snapshot_ts_not_in_csv_even_when_flag_on` (`== 18` → `== 19`), докстринг `test_snapshot_ts_json_records` («exactly 19» → «exactly 20»)
-- [ ] проверить тесты `TestSnapshotTs`: `snapshot_ts` по-прежнему JSON-only и идёт последним
-- [ ] run tests - must pass before task 4
+- [x] вставить `"account_id"` в `_CSV_FIELDS` после `"id"`; обновить комментарий про 18 → 19 полей
+- [x] `_enrich(records, hook, account_id, snapshot_ts=None)`: добавить параметр, вставить `"account_id": account_id` в `row` сразу после `"id"`; в `execute()` передавать локальный `cabinet_id` (санитизированный результат `resolve_cabinet_id()`), НЕ `self.account_id` — в данные должно попасть ровно то же значение, что и в путь
+- [x] обновить существующие тесты `TestEnrich` под новую сигнатуру
+- [x] написать тесты: JSON-строки содержат `account_id` с ожидаемым значением и ключ идёт сразу после `id`; CSV-заголовок содержит `account_id` второй колонкой
+- [x] написать тесты: фактические значения в CSV-строках — прочитать файл через `csv.DictReader` и проверить `row["account_id"]` в single-account и multi-account режимах (несколько строк)
+- [x] написать тест: multi-account режим (`account_id` передан) — в строках именно `account_id`, а не `login`; при сыром `account_id="a.b"` в строках и в пути одинаковое санитизированное `"a_b"`
+- [x] написать тест: single-account с `login` — в строках санитизированный `Account(id=login).id`
+- [x] обновить хардкод-проверки количества колонок: `TestWrite::test_csv_creates_file_with_header` (`== 18` → `== 19`), `TestSnapshotTs::test_snapshot_ts_not_in_csv_even_when_flag_on` (`== 18` → `== 19`), докстринг `test_snapshot_ts_json_records` («exactly 19» → «exactly 20»)
+- [x] проверить тесты `TestSnapshotTs`: `snapshot_ts` по-прежнему JSON-only и идёт последним
+- [x] run tests - must pass before task 4
 
 ### Task 4: Update BQ_SCHEMA in example DAGs and add schema regression tests
 

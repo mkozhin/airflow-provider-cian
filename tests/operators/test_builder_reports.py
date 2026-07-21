@@ -112,14 +112,14 @@ class TestEnrich:
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 50, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["is_targeted"] is True
 
     def test_is_targeted_false_when_billing_zero(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["is_targeted"] is False
 
     def test_cache_minimises_api_calls(self, tmp_path):
@@ -130,21 +130,21 @@ class TestEnrich:
             {"id": 3, "newbuildingId": 20, "billingPrice": 0, "date": "2024-01-15T12:00:00"},
         ]
         hook = _make_hook_mock([], {10: "ЖК А", 20: "ЖК Б"})
-        op._enrich(records, hook)
+        op._enrich(records, hook, "msk")
         assert hook.get_newbuilding_name.call_count == 2
 
     def test_newbuilding_name_populated(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([], {10: "ЖК Речной"})
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["newbuilding_name"] == "ЖК Речной"
 
     def test_datetime_without_timezone_gets_msk_offset(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
         assert enriched[0]["date"] == "2024-01-15"
 
@@ -152,7 +152,7 @@ class TestEnrich:
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T10:43:22+03:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["datetime"] == "2026-06-03T10:43:22+03:00"
         assert enriched[0]["date"] == "2024-01-15"
 
@@ -161,7 +161,7 @@ class TestEnrich:
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-03T00:30:00+00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["datetime"] == "2026-06-03T03:30:00+03:00"
         assert enriched[0]["date"] == "2024-01-15"
 
@@ -171,7 +171,7 @@ class TestEnrich:
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2026-06-02T23:30:00+00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert enriched[0]["datetime"] == "2026-06-03T02:30:00+03:00"
         assert enriched[0]["date"] == "2024-01-15"
 
@@ -180,7 +180,7 @@ class TestEnrich:
         op = _make_operator(str(tmp_path))  # date="2024-01-15"
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T23:30:00+00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         # MSK datetime would be 2024-01-16T02:30:00+03:00, but date must remain "2024-01-15"
         assert enriched[0]["datetime"] == "2024-01-16T02:30:00+03:00"
         assert enriched[0]["date"] == "2024-01-15"
@@ -190,28 +190,44 @@ class TestEnrich:
         records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0}]  # no "date" key
         hook = _make_hook_mock([])
         with pytest.raises(AirflowException, match="id=7"):
-            op._enrich(records, hook)
+            op._enrich(records, hook, "msk")
 
     def test_enriched_record_has_exactly_csv_fields(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook)
+        enriched = op._enrich(records, hook, "msk")
         assert set(enriched[0].keys()) == set(_CSV_FIELDS)
 
     def test_enrich_adds_snapshot_ts_when_provided(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook, snapshot_ts="2024-01-15T12:00:00")
+        enriched = op._enrich(records, hook, "msk", snapshot_ts="2024-01-15T12:00:00")
         assert enriched[0][_SNAPSHOT_FIELD] == "2024-01-15T12:00:00"
 
     def test_enrich_skips_snapshot_ts_when_none(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
         hook = _make_hook_mock([])
-        enriched = op._enrich(records, hook, snapshot_ts=None)
+        enriched = op._enrich(records, hook, "msk", snapshot_ts=None)
         assert _SNAPSHOT_FIELD not in enriched[0]
+
+    def test_enrich_adds_account_id_value(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, "acct42")
+        assert enriched[0]["account_id"] == "acct42"
+
+    def test_enrich_account_id_key_immediately_after_id(self, tmp_path):
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": "2024-01-15T10:00:00"}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, "acct42")
+        keys = list(enriched[0].keys())
+        assert keys[0] == "id"
+        assert keys[1] == "account_id"
 
 
 class TestWrite:
@@ -239,7 +255,8 @@ class TestWrite:
         assert len(rows) == 1
         assert "searcher_phone" in rows[0]
         assert "datetime" in rows[0]
-        assert len(rows[0]) == 18
+        assert "account_id" in rows[0]
+        assert len(rows[0]) == 19
 
     def test_csv_phones_quoted(self, tmp_path):
         op = _make_operator(str(tmp_path), "csv")
@@ -394,7 +411,7 @@ class TestSnapshotTs:
         return result["path"] if result else result
 
     def test_snapshot_ts_json_records(self, tmp_path):
-        """snapshot_ts is present in every record, has the correct value, and key set is exactly 19."""
+        """snapshot_ts is present in every record, has the correct value, and key set is exactly 20."""
         path = self._run_with_snapshot(tmp_path)
         with open(path, encoding="utf-8") as f:
             records = [json.loads(line) for line in f if line.strip()]
@@ -425,7 +442,7 @@ class TestSnapshotTs:
             fieldnames = reader.fieldnames
             rows = list(reader)
         assert fieldnames == _CSV_FIELDS
-        assert len(rows[0]) == 18
+        assert len(rows[0]) == 19
 
     def test_empty_records_with_snapshot_ts_returns_none_and_no_file(self, tmp_path):
         op = _make_operator(str(tmp_path), add_snapshot_ts=True)
@@ -663,3 +680,96 @@ class TestExecuteEmptyDay:
             result = op.execute(_make_context(run_id))
         assert result is None
         assert not os.path.exists(stale_path)
+
+
+class TestAccountIdInOutput:
+    """account_id ends up in the actual JSON/CSV rows with the sanitized value."""
+
+    def _run_single_account(self, tmp_path, login, output_format="json", records=None):
+        if records is None:
+            records = _sample_records()
+        op = _make_operator(str(tmp_path), output_format)
+        hook = _make_hook_mock(records, {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login=login)):
+            result = op.execute(_make_context("run-1"))
+        return result["path"], op
+
+    def _run_multi_account(self, tmp_path, account_id, output_format="json", records=None):
+        if records is None:
+            records = _sample_records()
+        op = CianBuilderReportsOperator(
+            task_id="test_collect",
+            cian_conn_id="cian_test",
+            date="2024-01-15",
+            base_dir=str(tmp_path),
+            output_format=output_format,
+            account_id=account_id,
+        )
+        hook = _make_hook_mock(records, {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook):
+            result = op.execute(_make_context("run-1"))
+        return result["path"], op
+
+    def _read_json(self, path):
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()]
+
+    def _read_csv(self, path):
+        with open(path, encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
+    def test_json_rows_have_account_id_right_after_id(self, tmp_path):
+        path, _ = self._run_single_account(tmp_path, login="msk")
+        records = self._read_json(path)
+        assert len(records) == 2
+        for record in records:
+            keys = list(record.keys())
+            assert keys[0] == "id"
+            assert keys[1] == "account_id"
+            assert record["account_id"] == "msk"
+
+    def test_csv_header_account_id_is_second_column(self, tmp_path):
+        path, _ = self._run_single_account(tmp_path, login="msk", output_format="csv")
+        with open(path, encoding="utf-8") as f:
+            fieldnames = csv.DictReader(f).fieldnames
+        assert fieldnames[0] == "id"
+        assert fieldnames[1] == "account_id"
+
+    def test_csv_rows_have_account_id_value_single_account(self, tmp_path):
+        path, _ = self._run_single_account(tmp_path, login="msk", output_format="csv")
+        rows = self._read_csv(path)
+        assert len(rows) == 2
+        for row in rows:
+            assert row["account_id"] == "msk"
+
+    def test_single_account_login_is_sanitized_in_rows(self, tmp_path):
+        # raw login "a.b" -> sanitized "a_b" in both rows and path
+        path, _ = self._run_single_account(tmp_path, login="a.b")
+        assert "a_b" in path
+        records = self._read_json(path)
+        for record in records:
+            assert record["account_id"] == "a_b"
+
+    def test_csv_rows_have_account_id_value_multi_account(self, tmp_path):
+        path, _ = self._run_multi_account(tmp_path, account_id="acct42", output_format="csv")
+        rows = self._read_csv(path)
+        assert len(rows) == 2
+        for row in rows:
+            assert row["account_id"] == "acct42"
+
+    def test_multi_account_uses_account_id_not_login(self, tmp_path):
+        # Even if a conn.login existed, multi-account mode never reads it — rows carry account_id.
+        path, _ = self._run_multi_account(tmp_path, account_id="acct42")
+        records = self._read_json(path)
+        for record in records:
+            assert record["account_id"] == "acct42"
+
+    def test_multi_account_raw_id_sanitized_in_rows_and_path(self, tmp_path):
+        # raw account_id "a.b" -> sanitized "a_b" identically in path and data
+        path, _ = self._run_multi_account(tmp_path, account_id="a.b")
+        assert "a_b" in path
+        records = self._read_json(path)
+        for record in records:
+            assert record["account_id"] == "a_b"

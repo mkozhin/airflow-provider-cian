@@ -17,6 +17,7 @@ _OUTPUT_FORMATS = ("json", "csv")
 
 _CSV_FIELDS = [
     "id",
+    "account_id",
     "newbuilding_id",
     "newbuilding_name",
     "date",
@@ -35,7 +36,7 @@ _CSV_FIELDS = [
     "has_claim",
     "is_targeted",
 ]
-# _CSV_FIELDS is the canonical base set for Builder Report (CSV uses exactly these 18 fields).
+# _CSV_FIELDS is the canonical base set for Builder Report (CSV uses exactly these 19 fields).
 # _SNAPSHOT_FIELD is the only optional extension — JSON-only output (see ADR-0001).
 _SNAPSHOT_FIELD = "snapshot_ts"
 
@@ -109,7 +110,7 @@ class CianBuilderReportsOperator(BaseOperator):
         # neither a file nor a fresh run directory behind (a run directory may
         # already exist because of neighbouring dates — that is fine).
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        enriched = self._enrich(records, hook, snapshot_ts)
+        enriched = self._enrich(records, hook, cabinet_id, snapshot_ts)
         self._write(enriched, output_path)
 
         return {"date": self.date, "path": output_path}
@@ -119,7 +120,9 @@ class CianBuilderReportsOperator(BaseOperator):
         ext = "json" if self.output_format == "json" else "csv"
         return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
 
-    def _enrich(self, records: list[dict], hook: CianHook, snapshot_ts: str | None = None) -> list[dict]:
+    def _enrich(
+        self, records: list[dict], hook: CianHook, account_id: str, snapshot_ts: str | None = None
+    ) -> list[dict]:
         unique_ids = {r["newbuildingId"] for r in records if "newbuildingId" in r}
         name_cache: dict[int, str] = {nid: hook.get_newbuilding_name(nid) for nid in unique_ids}
 
@@ -140,6 +143,7 @@ class CianBuilderReportsOperator(BaseOperator):
 
             row = {
                 "id": record.get("id"),
+                "account_id": account_id,
                 "newbuilding_id": nid,
                 "newbuilding_name": name_cache.get(nid, ""),
                 "date": self.date,
