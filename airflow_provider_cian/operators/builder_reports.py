@@ -79,7 +79,17 @@ class CianBuilderReportsOperator(BaseOperator):
             if self.add_snapshot_ts and self.output_format == "json" else None
         )
 
+        # cabinet_id is the canonical (sanitized) Account ID — same value the public
+        # account_id field carries; resolve_cabinet_id() sanitizes it internally.
         cabinet_id = resolve_cabinet_id(self.cian_conn_id, self.account_id)
+        # Fail fast BEFORE any hook/API side effects. `not cabinet_id` rejects both
+        # None (single-account without login) and "" (empty account_id, which
+        # os.path.join would silently swallow, dropping the cabinet path segment).
+        if not cabinet_id:
+            raise AirflowException(
+                f"Account ID is required: set 'login' in connection {self.cian_conn_id!r} "
+                "or pass a non-empty account_id"
+            )
         hook = CianHook(cian_conn_id=self.cian_conn_id, account_id=self.account_id)
 
         output_path = self._build_path(context["run_id"], cabinet_id)
@@ -104,12 +114,10 @@ class CianBuilderReportsOperator(BaseOperator):
 
         return {"date": self.date, "path": output_path}
 
-    def _build_path(self, run_id: str, cabinet_id: str | None = None) -> str:
+    def _build_path(self, run_id: str, cabinet_id: str) -> str:
         safe_run_id = re.sub(r"[^\w-]", "_", run_id)
         ext = "json" if self.output_format == "json" else "csv"
-        if cabinet_id is not None:
-            return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
-        return os.path.join(self.base_dir, safe_run_id, f"{self.date}.{ext}")
+        return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
 
     def _enrich(self, records: list[dict], hook: CianHook, snapshot_ts: str | None = None) -> list[dict]:
         unique_ids = {r["newbuildingId"] for r in records if "newbuildingId" in r}

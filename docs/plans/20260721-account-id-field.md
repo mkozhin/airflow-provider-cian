@@ -84,14 +84,14 @@
 - Modify: `airflow_provider_cian/operators/builder_reports.py`
 - Modify: `tests/operators/test_builder_reports.py`
 
-- [ ] в `execute()` после `resolve_cabinet_id()` добавить проверку: `if not cabinet_id` → `AirflowException` с текстом из Technical Details (до создания hook и запроса к API; покрывает и `None`, и `account_id=""`)
-- [ ] упростить `_build_path(run_id, cabinet_id)`: сделать `cabinet_id` обязательным, удалить ветку `None`
-- [ ] обновить ВСЕ фикстуры с `login=None` и ВСЕ прямые вызовы `_build_path` без cabinet_id по всему файлу тестов: `TestBuildPath`, `TestExecute`, `TestExecuteEmptyDay` (сохранить проверки поведения пустого дня — ADR-0003), `TestSnapshotTs` (`_run_with_snapshot`, `test_snapshot_ts_absent_by_default`, `test_empty_records_with_snapshot_ts_returns_none_and_no_file`)
-- [ ] удалить тесты удаляемого поведения: `TestBuildPathWithCabinetId::test_existing_build_path_calls_without_cabinet_id_still_work`; `TestExecuteWithAccount::test_execute_without_account_without_conn_login_path_has_no_extra_dir` (либо переписать на ожидание `AirflowException`)
-- [ ] написать тест: `execute()` без `login` в single-account режиме падает с `AirflowException` (проверить текст ошибки), не делает HTTP-запросов и не создаёт hook (`CianHook.assert_not_called()`)
-- [ ] написать тест: `execute()` с `account_id=""` падает с той же ранней `AirflowException` до создания `CianHook`
-- [ ] проверить ожидаемые пути с сегментом кабинета во всех обновлённых фикстурах
-- [ ] run tests - must pass before task 3
+- [x] в `execute()` после `resolve_cabinet_id()` добавить проверку: `if not cabinet_id` → `AirflowException` с текстом из Technical Details (до создания hook и запроса к API; покрывает и `None`, и `account_id=""`)
+- [x] упростить `_build_path(run_id, cabinet_id)`: сделать `cabinet_id` обязательным, удалить ветку `None`
+- [x] обновить ВСЕ фикстуры с `login=None` и ВСЕ прямые вызовы `_build_path` без cabinet_id по всему файлу тестов: `TestBuildPath`, `TestExecute`, `TestExecuteEmptyDay` (сохранить проверки поведения пустого дня — ADR-0003), `TestSnapshotTs` (`_run_with_snapshot`, `test_snapshot_ts_absent_by_default`, `test_empty_records_with_snapshot_ts_returns_none_and_no_file`)
+- [x] удалить тесты удаляемого поведения: `TestBuildPathWithCabinetId::test_existing_build_path_calls_without_cabinet_id_still_work`; `TestExecuteWithAccount::test_execute_without_account_without_conn_login_path_has_no_extra_dir` (либо переписать на ожидание `AirflowException`)
+- [x] написать тест: `execute()` без `login` в single-account режиме падает с `AirflowException` (проверить текст ошибки), не делает HTTP-запросов и не создаёт hook (`CianHook.assert_not_called()`)
+- [x] написать тест: `execute()` с `account_id=""` падает с той же ранней `AirflowException` до создания `CianHook`
+- [x] проверить ожидаемые пути с сегментом кабинета во всех обновлённых фикстурах
+- [x] run tests - must pass before task 3
 
 ### Task 3: Add account_id to enriched rows and _CSV_FIELDS
 

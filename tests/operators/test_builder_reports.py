@@ -87,23 +87,23 @@ def _make_hook_mock(records: list[dict], name_map: dict[int, str] | None = None)
 class TestBuildPath:
     def test_sanitizes_run_id(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        path = op._build_path("scheduled__2024-01-15T00:00:00+00:00")
+        path = op._build_path("scheduled__2024-01-15T00:00:00+00:00", "msk")
         assert "+" not in path
 
     def test_json_extension(self, tmp_path):
         op = _make_operator(str(tmp_path), "json")
-        path = op._build_path("run-1")
+        path = op._build_path("run-1", "msk")
         assert path.endswith(".json")
 
     def test_csv_extension(self, tmp_path):
         op = _make_operator(str(tmp_path), "csv")
-        path = op._build_path("run-1")
+        path = op._build_path("run-1", "msk")
         assert path.endswith(".csv")
 
     def test_different_run_ids_give_different_dirs(self, tmp_path):
         op = _make_operator(str(tmp_path))
-        path1 = op._build_path("run-1")
-        path2 = op._build_path("run-2")
+        path1 = op._build_path("run-1", "msk")
+        path2 = op._build_path("run-2", "msk")
         assert os.path.dirname(path1) != os.path.dirname(path2)
 
 
@@ -283,7 +283,7 @@ class TestExecute:
         hook = _make_hook_mock(records, {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context(run_id))
         # execute() now returns {"date", "path"} | None; unwrap so string-based
         # asserts below keep working.
@@ -315,7 +315,7 @@ class TestExecute:
         hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context("run-1"))
         assert isinstance(result, dict)
         assert set(result.keys()) == {"date", "path"}
@@ -330,7 +330,7 @@ class TestExecute:
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             path1 = op.execute(ctx)["path"]
 
         with open(path1, "w") as f:
@@ -338,7 +338,7 @@ class TestExecute:
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             path2 = op.execute(ctx)["path"]
 
         assert path1 == path2
@@ -373,7 +373,7 @@ class TestExecute:
         hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             path = op.execute(_make_context("run-1"))["path"]
         assert path.startswith(custom_dir)
 
@@ -388,7 +388,7 @@ class TestSnapshotTs:
         hook = _make_hook_mock(records, {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context("run-snap"))
         # execute() now returns {"date", "path"} | None; unwrap the path.
         return result["path"] if result else result
@@ -411,7 +411,7 @@ class TestSnapshotTs:
         hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             path = op.execute(_make_context("run-nosnap"))["path"]
         with open(path, encoding="utf-8") as f:
             records = [json.loads(line) for line in f if line.strip()]
@@ -432,10 +432,10 @@ class TestSnapshotTs:
         hook = _make_hook_mock([], {})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context("run-snap"))
         assert result is None
-        expected_path = op._build_path("run-snap")
+        expected_path = op._build_path("run-snap", "msk")
         assert not os.path.exists(expected_path)
 
 
@@ -451,13 +451,6 @@ class TestValidation:
 
 
 class TestBuildPathWithCabinetId:
-    def test_existing_build_path_calls_without_cabinet_id_still_work(self, tmp_path):
-        """Backward compat: op._build_path("run-1") works without cabinet_id."""
-        op = _make_operator(str(tmp_path))
-        path = op._build_path("run-1")
-        assert path.endswith(".json")
-        assert "run-1" in path
-
     def test_with_cabinet_id_includes_cabinet_in_path(self, tmp_path):
         op = _make_operator(str(tmp_path))
         path = op._build_path("run-1", "abc")
@@ -533,8 +526,8 @@ class TestExecuteWithAccount:
 
         assert "msk" in path
 
-    def test_execute_without_account_without_conn_login_path_has_no_extra_dir(self, tmp_path):
-        """Without account and without conn.login, path is {base_dir}/{run_id}/{date}.ext."""
+    def test_execute_without_account_without_conn_login_raises(self, tmp_path):
+        """Single-account mode without conn.login: fail fast, before any hook/API call."""
         op = CianBuilderReportsOperator(
             task_id="test_collect",
             cian_conn_id="cian_test",
@@ -542,19 +535,33 @@ class TestExecuteWithAccount:
             base_dir=str(tmp_path),
             output_format="json",
         )
-        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
         mock_conn = _make_conn_mock(login=None)
 
-        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook, \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=mock_conn):
-            path = op.execute(_make_context("run-1"))["path"]
+            with pytest.raises(AirflowException, match="Account ID is required"):
+                op.execute(_make_context("run-1"))
 
-        # Path should be base_dir/run_id/date.json — no extra cabinet dir
-        rel = os.path.relpath(path, str(tmp_path))
-        parts = rel.split(os.sep)
-        # Exactly 2 parts: <run_id_sanitized>/<date>.json
-        assert len(parts) == 2, f"Expected 2 path parts, got {parts}"
+        # No hook is created and no HTTP request is made before the validation fires.
+        MockHook.assert_not_called()
+
+    def test_execute_with_empty_account_id_raises(self, tmp_path):
+        """account_id="" fails with the same early AirflowException before CianHook is built."""
+        op = CianBuilderReportsOperator(
+            task_id="test_collect",
+            cian_conn_id="cian_test",
+            date="2024-01-15",
+            base_dir=str(tmp_path),
+            output_format="json",
+            account_id="",
+        )
+
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook:
+            with pytest.raises(AirflowException, match="Account ID is required"):
+                op.execute(_make_context("run-1"))
+
+        MockHook.assert_not_called()
 
     def test_execute_multi_mode_does_not_read_connection(self, tmp_path):
         """In multi-mode (account_id set), resolve_cabinet_id must not call get_connection."""
@@ -606,53 +613,53 @@ class TestExecuteEmptyDay:
         hook = _make_hook_mock([], {})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context(run_id))
         return result, op
 
     def test_empty_day_json_returns_none_no_file(self, tmp_path):
         result, op = self._run_empty(tmp_path, "json")
         assert result is None
-        assert not os.path.exists(op._build_path("run-empty"))
+        assert not os.path.exists(op._build_path("run-empty", "msk"))
 
     def test_empty_day_csv_returns_none_no_file(self, tmp_path):
         result, op = self._run_empty(tmp_path, "csv")
         assert result is None
-        assert not os.path.exists(op._build_path("run-empty"))
+        assert not os.path.exists(op._build_path("run-empty", "msk"))
 
     def test_empty_day_creates_no_run_directory(self, tmp_path):
         result, op = self._run_empty(tmp_path)
         assert result is None
-        run_dir = os.path.dirname(op._build_path("run-empty"))
+        run_dir = os.path.dirname(op._build_path("run-empty", "msk"))
         assert not os.path.exists(run_dir)
 
     def test_empty_day_creates_no_run_directory_but_keeps_sibling(self, tmp_path):
         """A run directory created by a neighbouring non-empty date is left intact."""
         op = _make_operator(str(tmp_path))
         run_id = "run-shared"
-        run_dir = os.path.dirname(op._build_path(run_id))
+        run_dir = os.path.dirname(op._build_path(run_id, "msk"))
         os.makedirs(run_dir, exist_ok=True)  # a sibling date created this earlier
         hook = _make_hook_mock([], {})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context(run_id))
         assert result is None
         assert os.path.exists(run_dir)  # not removed
-        assert not os.path.exists(op._build_path(run_id))  # but no file for this date
+        assert not os.path.exists(op._build_path(run_id, "msk"))  # but no file for this date
 
     def test_stale_file_removed_even_when_no_data(self, tmp_path):
         """A file left by a previous attempt is deleted even if this run has no data."""
         op = _make_operator(str(tmp_path))
         run_id = "run-retry-empty"
-        stale_path = op._build_path(run_id)
+        stale_path = op._build_path(run_id, "msk")
         os.makedirs(os.path.dirname(stale_path), exist_ok=True)
         with open(stale_path, "w") as f:
             f.write("stale content")
         hook = _make_hook_mock([], {})
         with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
-                   return_value=_make_conn_mock(login=None)):
+                   return_value=_make_conn_mock(login="msk")):
             result = op.execute(_make_context(run_id))
         assert result is None
         assert not os.path.exists(stale_path)
