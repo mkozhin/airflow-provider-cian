@@ -54,12 +54,13 @@ S3_CONN_ID   = "aws_default"
 S3_BUCKET    = "my-s3-bucket"
 S3_PREFIX    = "raw/placements/price/cian/new"
 
-# ── BQ schema (18 полей) ──────────────────────────────────────────────────────
+# ── BQ schema (19 полей) ──────────────────────────────────────────────────────
 # datetime — TIMESTAMP: BQ принимает ISO 8601 с offset, хранит в UTC.
 # В запросах: DATETIME(datetime, 'Europe/Moscow')
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},
+    {"name": "account_id",            "type": "STRING",    "mode": "NULLABLE"},
     {"name": "newbuilding_id",        "type": "INTEGER",   "mode": "NULLABLE"},
     {"name": "newbuilding_name",      "type": "STRING",    "mode": "NULLABLE"},
     {"name": "date",                  "type": "DATE",      "mode": "NULLABLE"},

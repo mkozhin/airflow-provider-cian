@@ -84,10 +84,11 @@ S3_PREFIX    = "raw/placements/price/cian/new"
 POOL             = "cian_pool"
 MAX_ACTIVE_TASKS = 5
 
-# ── BQ schema (19 полей, включая snapshot_ts) ────────────────────────────────
+# ── BQ schema (20 полей, включая snapshot_ts) ────────────────────────────────
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},
+    {"name": "account_id",            "type": "STRING",    "mode": "NULLABLE"},
     {"name": "newbuilding_id",        "type": "INTEGER",   "mode": "NULLABLE"},
     {"name": "newbuilding_name",      "type": "STRING",    "mode": "NULLABLE"},
     {"name": "date",                  "type": "DATE",      "mode": "NULLABLE"},

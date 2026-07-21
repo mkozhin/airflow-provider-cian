@@ -54,10 +54,11 @@ S3_PREFIX    = "raw/placements/price/cian/new"
 
 POOL         = "cian_pool"
 
-# ── BQ schema (18 полей) ──────────────────────────────────────────────────────
+# ── BQ schema (19 полей) ──────────────────────────────────────────────────────
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},
+    {"name": "account_id",            "type": "STRING",    "mode": "NULLABLE"},
     {"name": "newbuilding_id",        "type": "INTEGER",   "mode": "NULLABLE"},
     {"name": "newbuilding_name",      "type": "STRING",    "mode": "NULLABLE"},
     {"name": "date",                  "type": "DATE",      "mode": "NULLABLE"},

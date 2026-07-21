@@ -13,6 +13,7 @@ with the shared provider stubs (see tests/example_stubs.py).
 
 from __future__ import annotations
 
+from airflow_provider_cian.operators.builder_reports import _CSV_FIELDS
 from tests.example_stubs import get_dag_obj, import_dag_module
 
 _MOD_NAME = "examples.bq_and_s3_dag"
@@ -134,6 +135,31 @@ class TestV1AggregatorsWithData:
         assert "/run1/" in params[0]["source_objects"][0]
         assert params[1]["destination_project_dataset_table"].endswith("$20240102")
         assert params[1]["source_objects"][0].endswith("2024-01-02.json")
+
+
+class TestV1BqSchema:
+    """BQ_SCHEMA must stay in lockstep with the operator's _CSV_FIELDS.
+
+    GCSToBigQueryOperator loads with ignore_unknown_values=False, so any field
+    the operator writes but the schema omits would break the load for everyone
+    using the example as-is.
+    """
+
+    def test_bq_schema_matches_csv_fields(self):
+        mod = _import_dag_module()
+        schema_names = [f["name"] for f in mod.BQ_SCHEMA]
+        assert schema_names == list(_CSV_FIELDS)
+
+    def test_account_id_full_dict_right_after_id(self):
+        mod = _import_dag_module()
+        schema = mod.BQ_SCHEMA
+        names = [f["name"] for f in schema]
+        assert names.index("account_id") == names.index("id") + 1
+        assert schema[names.index("account_id")] == {
+            "name": "account_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+        }
 
 
 class TestV1Cleanup:

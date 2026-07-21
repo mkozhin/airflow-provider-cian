@@ -122,11 +122,11 @@
 
 Причина: у `GCSToBigQueryOperator` и load job BigQuery `ignore_unknown_values=False` по умолчанию — новое JSON-поле `account_id`, отсутствующее в схеме, сломает загрузку у всех, кто использует примеры как есть.
 
-- [ ] `bq_and_s3_dag.py` (`BQ_SCHEMA`, ~строка 61): добавить `{"name": "account_id", "type": "STRING", "mode": "NULLABLE"}` после `id` → 19 полей
-- [ ] `bq_and_s3_dag_v2.py` (`BQ_SCHEMA`, ~строка 59): то же → 19 полей
-- [ ] `bq_and_s3_multi_account_dag.py` (`BQ_SCHEMA`, ~строка 89, сейчас 19 полей со `snapshot_ts`): добавить `account_id` после `id` → 20 полей
-- [ ] написать regression-тесты схем в `tests/test_example_dag_v1.py`, `test_example_dag_v2.py`, `test_example_dag_multi_account.py` (эти файлы уже импортируют модули примеров; выделенные `*_structure.py`-файлы не трогать): состав `BQ_SCHEMA` совпадает с `_CSV_FIELDS` оператора (плюс `snapshot_ts` для multi-account примера), и новое поле присутствует ПОЛНЫМ словарём `{"name": "account_id", "type": "STRING", "mode": "NULLABLE"}` сразу после `id`
-- [ ] run tests - must pass before task 5
+- [x] `bq_and_s3_dag.py` (`BQ_SCHEMA`, ~строка 61): добавить `{"name": "account_id", "type": "STRING", "mode": "NULLABLE"}` после `id` → 19 полей
+- [x] `bq_and_s3_dag_v2.py` (`BQ_SCHEMA`, ~строка 59): то же → 19 полей
+- [x] `bq_and_s3_multi_account_dag.py` (`BQ_SCHEMA`, ~строка 89, сейчас 19 полей со `snapshot_ts`): добавить `account_id` после `id` → 20 полей
+- [x] написать regression-тесты схем в `tests/test_example_dag_v1.py`, `test_example_dag_v2.py`, `test_example_dag_multi_account.py` (эти файлы уже импортируют модули примеров; выделенные `*_structure.py`-файлы не трогать): состав `BQ_SCHEMA` совпадает с `_CSV_FIELDS` оператора (плюс `snapshot_ts` для multi-account примера), и новое поле присутствует ПОЛНЫМ словарём `{"name": "account_id", "type": "STRING", "mode": "NULLABLE"}` сразу после `id`
+- [x] run tests - must pass before task 5
 
 ### Task 5: Update documentation, changelog and ADR
 

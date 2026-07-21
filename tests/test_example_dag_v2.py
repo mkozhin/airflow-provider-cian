@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from airflow_provider_cian.operators.builder_reports import _CSV_FIELDS
 from tests.example_stubs import get_dag_obj, import_dag_module
 
 _MOD_NAME = "examples.bq_and_s3_dag_v2"
@@ -50,6 +51,31 @@ class TestV2DagImport:
         task_ids = set(dag_obj.task_dict.keys())
         assert "process_date" in task_ids
         assert "cleanup" in task_ids
+
+
+class TestV2BqSchema:
+    """BQ_SCHEMA must stay in lockstep with the operator's _CSV_FIELDS.
+
+    The BigQuery load job uses ignore_unknown_values=False, so any field the
+    operator writes but the schema omits would break the load for everyone
+    using the example as-is.
+    """
+
+    def test_bq_schema_matches_csv_fields(self):
+        mod = _import_dag_module()
+        schema_names = [f["name"] for f in mod.BQ_SCHEMA]
+        assert schema_names == list(_CSV_FIELDS)
+
+    def test_account_id_full_dict_right_after_id(self):
+        mod = _import_dag_module()
+        schema = mod.BQ_SCHEMA
+        names = [f["name"] for f in schema]
+        assert names.index("account_id") == names.index("id") + 1
+        assert schema[names.index("account_id")] == {
+            "name": "account_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+        }
 
 
 class TestV2Cleanup:

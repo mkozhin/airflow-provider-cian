@@ -7,6 +7,7 @@ import sys
 from unittest.mock import patch
 
 from airflow_provider_cian.accounts import Account
+from airflow_provider_cian.operators.builder_reports import _CSV_FIELDS
 from tests.example_stubs import _make_provider_stubs, get_dag_obj, import_dag_module
 
 _MOD_NAME = "examples.bq_and_s3_multi_account_dag"
@@ -218,6 +219,32 @@ class TestMultiAccountCleanup:
             cleanup(items, cabinet_id="aa", run_id="run1")
 
         assert not run_dir.exists()
+
+
+class TestMultiAccountBqSchema:
+    """BQ_SCHEMA must stay in lockstep with _CSV_FIELDS plus snapshot_ts.
+
+    The multi-account example collects with add_snapshot_ts=True, so its schema
+    carries the extra JSON-only ``snapshot_ts`` field appended after the
+    canonical CSV set. GCSToBigQueryOperator loads with
+    ignore_unknown_values=False, so an omitted field would break the load.
+    """
+
+    def test_bq_schema_matches_csv_fields_plus_snapshot_ts(self):
+        mod = _import_dag_module([])
+        schema_names = [f["name"] for f in mod.BQ_SCHEMA]
+        assert schema_names == list(_CSV_FIELDS) + ["snapshot_ts"]
+
+    def test_account_id_full_dict_right_after_id(self):
+        mod = _import_dag_module([])
+        schema = mod.BQ_SCHEMA
+        names = [f["name"] for f in schema]
+        assert names.index("account_id") == names.index("id") + 1
+        assert schema[names.index("account_id")] == {
+            "name": "account_id",
+            "type": "STRING",
+            "mode": "NULLABLE",
+        }
 
 
 class TestMultiAccountDagConstants:
