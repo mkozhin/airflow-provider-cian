@@ -475,13 +475,15 @@ class TestBuildPathWithCabinetId:
         assert path.endswith(".json")
 
     def test_build_path_no_sanitization_trusted_cabinet_id(self, tmp_path):
-        """_build_path trusts cabinet_id — already sanitized value passes through unchanged."""
+        """_build_path trusts cabinet_id — it does NOT sanitize it (that is the
+        caller's job via resolve_cabinet_id). A value with a special char that the
+        sanitizer WOULD alter must survive verbatim as its own path segment."""
         op = _make_operator(str(tmp_path))
-        path = op._build_path("run-1", "a_b")
-        assert "a_b" in path
-        # No extra underscores introduced
+        path = op._build_path("run-1", "a.b")
         parts = path.split(os.sep)
-        assert "a_b" in parts
+        # The trusted value survives as-is; it was NOT rewritten to "a_b".
+        assert "a.b" in parts
+        assert "a_b" not in parts
 
 
 class TestExecuteWithAccount:
@@ -557,8 +559,13 @@ class TestExecuteWithAccount:
         with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook, \
              patch("airflow_provider_cian.accounts.BaseHook.get_connection",
                    return_value=mock_conn):
-            with pytest.raises(AirflowException, match="Account ID is required"):
+            with pytest.raises(AirflowException, match="Account ID is required") as exc_info:
                 op.execute(_make_context("run-1"))
+
+        # The message interpolates the connection id and points at the fix.
+        msg = str(exc_info.value)
+        assert "cian_test" in msg
+        assert "account_id" in msg
 
         # No hook is created and no HTTP request is made before the validation fires.
         MockHook.assert_not_called()
@@ -575,8 +582,12 @@ class TestExecuteWithAccount:
         )
 
         with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook:
-            with pytest.raises(AirflowException, match="Account ID is required"):
+            with pytest.raises(AirflowException, match="Account ID is required") as exc_info:
                 op.execute(_make_context("run-1"))
+
+        msg = str(exc_info.value)
+        assert "cian_test" in msg
+        assert "account_id" in msg
 
         MockHook.assert_not_called()
 
@@ -773,3 +784,13 @@ class TestAccountIdInOutput:
         records = self._read_json(path)
         for record in records:
             assert record["account_id"] == "a_b"
+
+    def test_multi_account_raw_id_sanitized_in_csv_cells(self, tmp_path):
+        # A raw/special-char account_id lands sanitized in the CSV cells too,
+        # read back via csv.DictReader (not just the path).
+        path, _ = self._run_multi_account(tmp_path, account_id="a.b", output_format="csv")
+        assert "a_b" in path
+        rows = self._read_csv(path)
+        assert len(rows) == 2
+        for row in rows:
+            assert row["account_id"] == "a_b"

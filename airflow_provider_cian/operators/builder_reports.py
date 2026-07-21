@@ -3,13 +3,12 @@ from __future__ import annotations
 import csv
 import json
 import os
-import re
 from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.exceptions import AirflowException
 from airflow.models import BaseOperator
 
-from airflow_provider_cian.accounts import resolve_cabinet_id
+from airflow_provider_cian.accounts import resolve_cabinet_id, sanitize_id
 from airflow_provider_cian.hooks.cian import CianHook
 
 _MSK = timezone(timedelta(hours=3))
@@ -116,7 +115,7 @@ class CianBuilderReportsOperator(BaseOperator):
         return {"date": self.date, "path": output_path}
 
     def _build_path(self, run_id: str, cabinet_id: str) -> str:
-        safe_run_id = re.sub(r"[^\w-]", "_", run_id)
+        safe_run_id = sanitize_id(run_id)
         ext = "json" if self.output_format == "json" else "csv"
         return os.path.join(self.base_dir, cabinet_id, safe_run_id, f"{self.date}.{ext}")
 

@@ -292,6 +292,14 @@ class TestResolveToken:
         with pytest.raises(AirflowException, match="not found in connection"):
             resolve_token(conn, "x.y")
 
+    def test_multi_mode_empty_account_id_raises_not_found(self):
+        """account_id="" is multi-account mode (not None): it canonicalizes to ""
+        and, absent an entry with an empty id, raises 'not found' rather than
+        silently falling back to conn.password."""
+        conn = _make_conn(conn_id="cian_test", accounts=[{"id": "abc", "token": "tok"}])
+        with pytest.raises(AirflowException, match="not found in connection"):
+            resolve_token(conn, "")
+
     def test_single_mode_returns_conn_password(self):
         conn = _make_conn(password="my-password")
         result = resolve_token(conn, None)

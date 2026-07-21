@@ -72,7 +72,7 @@ pip install airflow-provider-cian
 | `date` | str | обязательный | Дата сбора, `YYYY-MM-DD`. Поддерживает шаблон `{{ ds }}` |
 | `base_dir` | str | `/tmp/cian` | Базовая директория для файлов |
 | `output_format` | str | `json` | `json` (JSONL) или `csv` |
-| `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON) |
+| `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON). Также записывается (санитизированным) в поле `account_id` каждой записи выгрузки |
 | `add_snapshot_ts` | bool | `False` | Добавить поле `snapshot_ts` (naive-UTC время старта прогона, ISO 8601) в каждую JSON-запись. Игнорируется при `output_format='csv'`. |
 
 ### Возвращаемое значение (контракт `execute`)
@@ -80,7 +80,7 @@ pip install airflow-provider-cian
 За день **с данными** оператор пишет файл и возвращает самоописывающий dict, который кладётся в XCom `return_value`:
 
 ```python
-{"date": "2026-07-01", "path": "/tmp/cian/<run_id>/2026-07-01.json"}
+{"date": "2026-07-01", "path": "/tmp/cian/<account_id>/<run_id>/2026-07-01.json"}
 ```
 
 За **пустой день** (Cian вернул `reports: []`) оператор **не создаёт файл** и возвращает `None`. Airflow не пишет XCom для `None`, поэтому пустой день просто выпадает из списка результатов mapped-таска `collect` — ни одного downstream mapped-инстанса за него не создаётся.

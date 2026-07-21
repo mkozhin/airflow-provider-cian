@@ -11,6 +11,15 @@ from airflow.models import Connection
 log = logging.getLogger(__name__)
 
 
+def sanitize_id(value: str) -> str:
+    """Canonicalize an id/path segment: replace every ``[^\\w-]`` char with ``_``.
+
+    Single source of the canonical Account ID form used everywhere (file paths,
+    token lookup, the ``account_id`` field). Idempotent; ``""`` stays ``""``.
+    """
+    return re.sub(r"[^\w-]", "_", value)
+
+
 @dataclass
 class Account:
     """Represents a Cian account (cabinet). The `id` is sanitized on creation."""
@@ -18,7 +27,7 @@ class Account:
     id: str
 
     def __post_init__(self) -> None:
-        self.id = re.sub(r"[^\w-]", "_", self.id)
+        self.id = sanitize_id(self.id)
 
 
 def _parse_accounts(conn: Connection) -> list[tuple[Account, str | None]]:
@@ -80,7 +89,7 @@ def resolve_cabinet_id(conn_id: str, account_id: str | None) -> str | None:
     """Resolve the cabinet id for an operation.
 
     In multi-account mode (account_id is not None): returns the sanitized
-    account_id (Account(id=account_id).id), without reading the connection. An
+    account_id (sanitize_id(account_id)), without reading the connection. An
     empty string stays empty (sanitization of "" is "").
     In single-account mode (account_id is None): reads the connection lazily and
     returns Account(id=conn.login).id if conn.login is set, otherwise None.
@@ -89,10 +98,10 @@ def resolve_cabinet_id(conn_id: str, account_id: str | None) -> str | None:
     operator works everywhere with one canonical (sanitized) Account ID form.
     """
     if account_id is not None:
-        return Account(id=account_id).id
+        return sanitize_id(account_id)
     conn = BaseHook.get_connection(conn_id)
     if conn.login:
-        return Account(id=conn.login).id
+        return sanitize_id(conn.login)
     return None
 
 
@@ -102,7 +111,7 @@ def resolve_token(conn: Connection, account_id: str | None) -> str:
     In multi-account mode (account_id is not None): finds the first account
     whose sanitized id matches the sanitized account_id in conn.extra.accounts
     and returns its token. The search key is sanitized once via
-    Account(id=account_id).id so a raw account_id (e.g. "a.b") matches an
+    sanitize_id(account_id) so a raw account_id (e.g. "a.b") matches an
     entry stored raw or sanitized — both canonicalize to the same form.
     In single-account mode (account_id is None): returns conn.password.
 
@@ -110,7 +119,7 @@ def resolve_token(conn: Connection, account_id: str | None) -> str:
     behavior. No warnings are logged (execution-time policy).
     """
     if account_id is not None:
-        canonical = Account(id=account_id).id
+        canonical = sanitize_id(account_id)
         for acc, token in _parse_accounts(conn):
             if acc.id == canonical:
                 if not token:

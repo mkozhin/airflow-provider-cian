@@ -73,7 +73,7 @@ The token source is controlled **solely by `account_id`** on the operator — no
 | `date` | str | required | Collection date, `YYYY-MM-DD`. Supports `{{ ds }}` template |
 | `base_dir` | str | `/tmp/cian` | Base directory for output files |
 | `output_format` | str | `json` | `json` (JSONL) or `csv` |
-| `account_id` | str \| None | `None` | Cabinet ID for multi-account mode (matches `id` in Extra JSON) |
+| `account_id` | str \| None | `None` | Cabinet ID for multi-account mode (matches `id` in Extra JSON). Also written (sanitized) into the `account_id` field of every output record |
 | `add_snapshot_ts` | bool | `False` | Add `snapshot_ts` field (naive-UTC run start time, ISO 8601) to each JSON record. Ignored for `output_format='csv'`. |
 
 ### Return value (`execute` contract)
@@ -81,7 +81,7 @@ The token source is controlled **solely by `account_id`** on the operator — no
 For a day **with data**, the operator writes the file and returns a self-describing dict, pushed to the `return_value` XCom:
 
 ```python
-{"date": "2026-07-01", "path": "/tmp/cian/<run_id>/2026-07-01.json"}
+{"date": "2026-07-01", "path": "/tmp/cian/<account_id>/<run_id>/2026-07-01.json"}
 ```
 
 For an **empty day** (Cian returned `reports: []`), the operator writes **no file** and returns `None`. Airflow does not push an XCom for `None`, so an empty day simply drops out of the `collect` mapped task's result list — no downstream mapped instance is created for it.
