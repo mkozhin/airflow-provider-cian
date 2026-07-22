@@ -175,10 +175,10 @@
 
 ### Task 4: Verify acceptance criteria
 
-- [ ] verify: невалидная `date` (traversal, мусор, календарно-невозможная, Unicode-цифры, не-строка) падает `AirflowException` до создания hook И до чтения connection; валидная `YYYY-MM-DD` работает как раньше
-- [ ] verify: `resolve_token` при коллизии двух записей падает явной ошибкой с диагностическими полями, штатные уникальные/отсутствующие/без-token случаи не изменились; docstring обновлён (нет «first account»); смена контракта отражена в CONTEXT.md, README.md/README_ru.md и CHANGELOG 0.5.0 (BREAKING)
-- [ ] verify: пример импортирует и использует `sanitize_id`, `safe_id` удалён, лишний `import re` убран; поведенческий тест доказывает санитизацию `run_id`; пути примера логически совпадают с путём оператора (тот же `sanitize_id`)
-- [ ] run full test suite: `pytest`
+- [x] verify: невалидная `date` (traversal, мусор, календарно-невозможная, Unicode-цифры, не-строка) падает `AirflowException` до создания hook И до чтения connection; валидная `YYYY-MM-DD` работает как раньше
+- [x] verify: `resolve_token` при коллизии двух записей падает явной ошибкой с диагностическими полями, штатные уникальные/отсутствующие/без-token случаи не изменились; docstring обновлён (нет «first account»); смена контракта отражена в CONTEXT.md, README.md/README_ru.md и CHANGELOG 0.5.0 (BREAKING)
+- [x] verify: пример импортирует и использует `sanitize_id`, `safe_id` удалён, лишний `import re` убран; поведенческий тест доказывает санитизацию `run_id`; пути примера логически совпадают с путём оператора (тот же `sanitize_id`)
+- [x] run full test suite: `pytest`
 
 ### Task 5: [Final] Close plan
 
