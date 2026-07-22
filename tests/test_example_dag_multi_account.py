@@ -202,6 +202,20 @@ class TestMultiAccountAggregatorsWithData:
         assert "/run_1/" in params[0]["dst"]
         assert "/run.1/" not in params[0]["dst"]
 
+    def test_make_bq_params_sanitizes_run_id(self):
+        """make_bq_params sanitizes run_id into its source_objects path segment.
+
+        Mirrors test_make_gcs_params_sanitizes_run_id: "run.1" must appear as the
+        segment "run_1" in the GCS source_objects path, never as raw "run.1".
+        Guards against a regression that used a raw run_id at this call site.
+        """
+        mod = _import_dag_module([Account(id="aa")])
+        make_bq_params = _get_cabinet_callable(mod, "aa", "make_bq_params")
+        params = make_bq_params(self.ITEMS, cabinet_id="aa", run_id="run.1")
+        source = params[0]["source_objects"][0]
+        assert "/run_1/" in source
+        assert "/run.1/" not in source
+
 
 class TestMultiAccountCleanup:
     """cleanup must tolerate an empty mapped result (None / [])."""
@@ -231,6 +245,31 @@ class TestMultiAccountCleanup:
             cleanup(items, cabinet_id="aa", run_id="run1")
 
         assert not run_dir.exists()
+
+    def test_cleanup_sanitizes_run_id(self, tmp_path):
+        """cleanup targets the sanitized run dir: run_id "run.1" → "run_1".
+
+        Guards against a regression that used a raw run_id at this call site: the
+        sanitized "run_1" dir must be removed while a literal "run.1" dir is left
+        untouched.
+        """
+        mod = _import_dag_module([Account(id="aa")])
+        cleanup = _get_cabinet_callable(mod, "aa", "cleanup")
+
+        sanitized_dir = tmp_path / "aa" / "run_1"
+        sanitized_dir.mkdir(parents=True)
+        (sanitized_dir / "2024-01-01.json").write_text("{}")
+
+        raw_dir = tmp_path / "aa" / "run.1"
+        raw_dir.mkdir(parents=True)
+        (raw_dir / "2024-01-01.json").write_text("{}")
+
+        items = [{"date": "2024-01-01", "path": str(sanitized_dir / "2024-01-01.json")}]
+        with patch.object(mod, "BASE_DIR", str(tmp_path)):
+            cleanup(items, cabinet_id="aa", run_id="run.1")
+
+        assert not sanitized_dir.exists()
+        assert raw_dir.exists()
 
 
 class TestMultiAccountBqSchema:
