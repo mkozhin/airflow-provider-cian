@@ -184,7 +184,7 @@
 
 *Все правки документации (CONTEXT.md/README/CHANGELOG) выполняются в Task 2 — здесь только закрытие плана.*
 
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/` (harness performs the actual move after all phases)
 
 ## Post-Completion
 
