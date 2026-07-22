@@ -124,17 +124,17 @@ def resolve_token(conn: Connection, account_id: str | None) -> str:
     """
     if account_id is not None:
         canonical = sanitize_id(account_id)
-        matches = [token for acc, token in _parse_accounts(conn) if acc.id == canonical]
-        if len(matches) > 1:
+        matching_tokens = [token for acc, token in _parse_accounts(conn) if acc.id == canonical]
+        if len(matching_tokens) > 1:
             raise AirflowException(
                 f"Account id={account_id!r} is ambiguous in connection {conn.conn_id!r}: "
-                f"{len(matches)} accounts collapse to the same sanitized id {canonical!r}"
+                f"{len(matching_tokens)} accounts collapse to the same sanitized id {canonical!r}"
             )
-        if not matches:
+        if not matching_tokens:
             raise AirflowException(
                 f"Account id={account_id!r} not found in connection {conn.conn_id!r} extra.accounts"
             )
-        token = matches[0]
+        token = matching_tokens[0]
         if not token:
             raise AirflowException(
                 f"Account id={account_id!r} found in connection "
