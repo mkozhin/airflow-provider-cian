@@ -274,7 +274,7 @@ class TestResolveToken:
         result = resolve_token(conn, "abc")
         assert result == "account-token"
 
-    def test_multi_mode_returns_first_matching_token(self):
+    def test_multi_mode_matches_sanitized_account_id(self):
         conn = _make_conn(accounts=[{"id": "a.b", "token": "dotted-token"}])
         # account_id is the sanitized form
         result = resolve_token(conn, "a_b")
@@ -329,13 +329,25 @@ class TestResolveToken:
         assert "nonexistent" in msg
         assert "cian_test" in msg
 
-    def test_no_warnings_logged_when_duplicates_in_accounts(self):
-        """resolve_token must not log warnings even when duplicate ids exist in data."""
-        conn = _make_conn(accounts=[{"id": "a.b", "token": "tok1"}, {"id": "a/b", "token": "tok2"}])
+    def test_ambiguous_collision_raises_without_warning(self):
+        """Two entries collapsing to the same sanitized id ('a.b' and 'a/b' both
+        -> 'a_b') are ambiguous at runtime: resolve_token raises AirflowException
+        instead of silently picking the first, and still logs no WARNING
+        (execution-time policy — it fails via exception, not a log line)."""
+        conn = _make_conn(
+            conn_id="cian_test",
+            accounts=[{"id": "a.b", "token": "tok1"}, {"id": "a/b", "token": "tok2"}],
+        )
         with patch("airflow_provider_cian.accounts.log") as mock_log:
-            result = resolve_token(conn, "a_b")
+            with pytest.raises(AirflowException) as exc_info:
+                resolve_token(conn, "a.b")
 
-        assert result == "tok1"
+        msg = str(exc_info.value)
+        # diagnostic completeness: original account_id, conn_id, canonical id, multiplicity
+        assert "a.b" in msg  # original account_id
+        assert "cian_test" in msg  # conn_id
+        assert "a_b" in msg  # canonical (sanitized) id
+        assert "2" in msg and "collapse" in msg  # match count / ambiguity signal
         mock_log.warning.assert_not_called()
 
     def test_no_warnings_logged_when_entry_missing_id(self):

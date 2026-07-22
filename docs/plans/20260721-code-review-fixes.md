@@ -147,17 +147,17 @@
 - Modify: `README.md`
 - Modify: `README_ru.md`
 
-- [ ] в multi-account ветке `resolve_token` собрать все совпадения по `canonical` в список; при `len > 1` — `AirflowException` про неоднозначность (текст из Technical Details, с исходным `account_id`, `conn_id`, каноническим id и числом совпадений); при 0 — прежняя ошибка «not found»; при 1 — прежнее поведение (проверка пустого токена / возврат)
-- [ ] сохранить дословно тексты ошибок `"not found in connection"` и `"missing required 'token' field"`
-- [ ] обновить docstring `resolve_token`: убрать «finds the **first** account», описать детект неоднозначности; заодно убрать/актуализировать устаревшую фразу «matching current `_make_request` behavior» (`accounts.py:118`)
-- [ ] **расширить существующий тест** `test_no_warnings_logged_when_duplicates_in_accounts` (`tests/test_accounts.py:332-339`) — он уже заводит коллизию `"a.b"`+`"a/b"` (обе → `a_b`): теперь ожидать `AirflowException` про неоднозначность, сохранив `mock_log.warning.assert_not_called()` (на runtime без WARNING — падаем исключением). Это и есть collision-тест — отдельный НЕ добавляем (правка по codex-review: не дублировать)
-- [ ] в этом тесте (правка по codex-review) закрепить диагностическую полноту сообщения: проверить наличие исходного `account_id`, `conn_id`, канонического id и признака множественности (число совпадений / «collapse»)
-- [ ] **обязательно** переименовать `test_multi_mode_returns_first_matching_token` (`tests/test_accounts.py:277`) → `test_multi_mode_matches_sanitized_account_id` — «first matching» больше не концепция (правка по codex-review: сделать обязательным)
-- [ ] НЕ добавлять новые тесты на unique/not-found/missing-token — они уже покрыты существующими тестами (`tests/test_accounts.py:272+`) с точными текстами ошибок; просто прогнать их и убедиться, что не сломались (правка по codex-review: не дублировать покрытие)
-- [ ] обновить `README.md:187` и `README_ru.md:186` (правка по codex-review): убрать обещание «первой записи» как поведения при коллизии, добавить «падает при неоднозначной коллизии id», сохранив тезис про канонический ключ поиска (сырой `account_id` находит санитизированную запись)
-- [ ] обновить CONTEXT.md: `resolve_token` теперь падает на неоднозначной коллизии id (асимметрия с `list_accounts`, который дедуплицирует с WARNING)
-- [ ] обновить CHANGELOG.md (секция 0.5.0), пометить как `- **BREAKING**:` — `resolve_token` теперь падает на неоднозначной коллизии id вместо молчаливого выбора первой записи
-- [ ] run tests — must pass before task 3
+- [x] в multi-account ветке `resolve_token` собрать все совпадения по `canonical` в список; при `len > 1` — `AirflowException` про неоднозначность (текст из Technical Details, с исходным `account_id`, `conn_id`, каноническим id и числом совпадений); при 0 — прежняя ошибка «not found»; при 1 — прежнее поведение (проверка пустого токена / возврат)
+- [x] сохранить дословно тексты ошибок `"not found in connection"` и `"missing required 'token' field"`
+- [x] обновить docstring `resolve_token`: убрать «finds the **first** account», описать детект неоднозначности; заодно убрать/актуализировать устаревшую фразу «matching current `_make_request` behavior» (`accounts.py:118`)
+- [x] **расширить существующий тест** `test_no_warnings_logged_when_duplicates_in_accounts` (`tests/test_accounts.py:332-339`) — он уже заводит коллизию `"a.b"`+`"a/b"` (обе → `a_b`): теперь ожидать `AirflowException` про неоднозначность, сохранив `mock_log.warning.assert_not_called()` (на runtime без WARNING — падаем исключением). Это и есть collision-тест — отдельный НЕ добавляем (правка по codex-review: не дублировать)
+- [x] в этом тесте (правка по codex-review) закрепить диагностическую полноту сообщения: проверить наличие исходного `account_id`, `conn_id`, канонического id и признака множественности (число совпадений / «collapse»)
+- [x] **обязательно** переименовать `test_multi_mode_returns_first_matching_token` (`tests/test_accounts.py:277`) → `test_multi_mode_matches_sanitized_account_id` — «first matching» больше не концепция (правка по codex-review: сделать обязательным)
+- [x] НЕ добавлять новые тесты на unique/not-found/missing-token — они уже покрыты существующими тестами (`tests/test_accounts.py:272+`) с точными текстами ошибок; просто прогнать их и убедиться, что не сломались (правка по codex-review: не дублировать покрытие)
+- [x] обновить `README.md:187` и `README_ru.md:186` (правка по codex-review): убрать обещание «первой записи» как поведения при коллизии, добавить «падает при неоднозначной коллизии id», сохранив тезис про канонический ключ поиска (сырой `account_id` находит санитизированную запись)
+- [x] обновить CONTEXT.md: `resolve_token` теперь падает на неоднозначной коллизии id (асимметрия с `list_accounts`, который дедуплицирует с WARNING)
+- [x] обновить CHANGELOG.md (секция 0.5.0), пометить как `- **BREAKING**:` — `resolve_token` теперь падает на неоднозначной коллизии id вместо молчаливого выбора первой записи
+- [x] run tests — must pass before task 3
 
 ### Task 3: Use sanitize_id in the multi-account example
 

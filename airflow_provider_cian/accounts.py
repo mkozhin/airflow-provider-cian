@@ -108,29 +108,39 @@ def resolve_cabinet_id(conn_id: str, account_id: str | None) -> str | None:
 def resolve_token(conn: Connection, account_id: str | None) -> str:
     """Resolve the authentication token for a request.
 
-    In multi-account mode (account_id is not None): finds the first account
-    whose sanitized id matches the sanitized account_id in conn.extra.accounts
-    and returns its token. The search key is sanitized once via
+    In multi-account mode (account_id is not None): finds the account whose
+    sanitized id matches the sanitized account_id in conn.extra.accounts and
+    returns its token. The search key is sanitized once via
     sanitize_id(account_id) so a raw account_id (e.g. "a.b") matches an
     entry stored raw or sanitized — both canonicalize to the same form.
+    If two or more entries collapse to the same sanitized id (an ambiguous
+    collision), this raises AirflowException instead of silently picking one —
+    a deliberate asymmetry with list_accounts, which deduplicates such
+    collisions with a WARNING and keeps the first.
     In single-account mode (account_id is None): returns conn.password.
 
-    Raises AirflowException with exact error messages matching current _make_request
-    behavior. No warnings are logged (execution-time policy).
+    Raises AirflowException with exact error messages for the not-found and
+    missing-token cases. No warnings are logged (execution-time policy).
     """
     if account_id is not None:
         canonical = sanitize_id(account_id)
-        for acc, token in _parse_accounts(conn):
-            if acc.id == canonical:
-                if not token:
-                    raise AirflowException(
-                        f"Account id={account_id!r} found in connection "
-                        f"{conn.conn_id!r} but is missing required 'token' field"
-                    )
-                return token
-        raise AirflowException(
-            f"Account id={account_id!r} not found in connection {conn.conn_id!r} extra.accounts"
-        )
+        matches = [token for acc, token in _parse_accounts(conn) if acc.id == canonical]
+        if len(matches) > 1:
+            raise AirflowException(
+                f"Account id={account_id!r} is ambiguous in connection {conn.conn_id!r}: "
+                f"{len(matches)} accounts collapse to the same sanitized id {canonical!r}"
+            )
+        if not matches:
+            raise AirflowException(
+                f"Account id={account_id!r} not found in connection {conn.conn_id!r} extra.accounts"
+            )
+        token = matches[0]
+        if not token:
+            raise AirflowException(
+                f"Account id={account_id!r} found in connection "
+                f"{conn.conn_id!r} but is missing required 'token' field"
+            )
+        return token
     token = conn.password
     if not token:
         raise AirflowException(
