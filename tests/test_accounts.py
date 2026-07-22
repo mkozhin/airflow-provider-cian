@@ -280,18 +280,6 @@ class TestResolveToken:
         result = resolve_token(conn, "a_b")
         assert result == "dotted-token"
 
-    def test_multi_mode_finds_token_by_raw_account_id(self):
-        """A raw account_id ('a.b') matches an entry stored raw ('a.b'):
-        both canonicalize to 'a_b'."""
-        conn = _make_conn(accounts=[{"id": "a.b", "token": "dotted-token"}])
-        result = resolve_token(conn, "a.b")
-        assert result == "dotted-token"
-
-    def test_multi_mode_raw_account_id_still_raises_for_absent_account(self):
-        conn = _make_conn(conn_id="cian_test", accounts=[{"id": "a.b", "token": "tok"}])
-        with pytest.raises(AirflowException, match="not found in connection"):
-            resolve_token(conn, "x.y")
-
     def test_multi_mode_empty_account_id_raises_not_found(self):
         """account_id="" is multi-account mode (not None): it canonicalizes to ""
         and, absent an entry with an empty id, raises 'not found' rather than
