@@ -165,13 +165,13 @@
 - Modify: `examples/bq_and_s3_multi_account_dag.py`
 - Modify: `tests/test_example_dag_multi_account.py`
 
-- [ ] добавить `sanitize_id` в импорт из `airflow_provider_cian.accounts`
-- [ ] удалить локальную `def safe_id(...)`, заменить 3 вызова `safe_id(...)` на `sanitize_id(...)` (`make_gcs_params`, `make_bq_params`, `cleanup`)
-- [ ] удалить `import re` из примера, если он больше нигде не используется (проверить grep)
-- [ ] поведенческий тест (правка по codex-review, вариант B): прогнать существующий поведенческий хелпер (`TestCleanup` или `make_gcs_params`/`make_bq_params`) с `run_id="run.1"` и проверить, что в пути/`run_dir` сегмент `run_1` — доказывает, что санитизация реально применяется (не мокая внутренности)
-- [ ] обновить устаревший комментарий про `safe_id(run_id)` в `tests/test_example_dag_multi_account.py:164`
-- [ ] прогнать существующие тесты примера, чтобы импорт/структура не сломались
-- [ ] run tests — must pass before task 4
+- [x] добавить `sanitize_id` в импорт из `airflow_provider_cian.accounts`
+- [x] удалить локальную `def safe_id(...)`, заменить 3 вызова `safe_id(...)` на `sanitize_id(...)` (`make_gcs_params`, `make_bq_params`, `cleanup`)
+- [x] удалить `import re` из примера, если он больше нигде не используется (проверить grep)
+- [x] поведенческий тест (правка по codex-review, вариант B): прогнать существующий поведенческий хелпер (`TestCleanup` или `make_gcs_params`/`make_bq_params`) с `run_id="run.1"` и проверить, что в пути/`run_dir` сегмент `run_1` — доказывает, что санитизация реально применяется (не мокая внутренности)
+- [x] обновить устаревший комментарий про `safe_id(run_id)` в `tests/test_example_dag_multi_account.py:164`
+- [x] прогнать существующие тесты примера, чтобы импорт/структура не сломались
+- [x] run tests — must pass before task 4
 
 ### Task 4: Verify acceptance criteria
 

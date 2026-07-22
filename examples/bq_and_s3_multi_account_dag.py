@@ -50,7 +50,6 @@ DAG импортируется без TaskGroup-ов и без ошибок.
 """
 
 import os
-import re
 import shutil
 from datetime import date, timedelta
 
@@ -62,7 +61,7 @@ from airflow.providers.google.cloud.hooks.gcs import GCSHook
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
 
-from airflow_provider_cian.accounts import Account, list_accounts
+from airflow_provider_cian.accounts import Account, list_accounts, sanitize_id
 from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator
 
 # ── Конфигурация ──────────────────────────────────────────────────────────────
@@ -121,10 +120,6 @@ DEFAULT_ARGS = {
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def safe_id(run_id: str) -> str:
-    return re.sub(r"[^\w-]", "_", run_id)
-
-
 def date_range(date_from: str, date_to: str) -> list[str]:
     start = date.fromisoformat(date_from)
     end   = date.fromisoformat(date_to)
@@ -179,7 +174,7 @@ def cian_to_bq_and_s3_multi_account():
         items = list(items or [])   # None, когда XCom не записал ни один день (весь период пуст)
         if not items:
             return []               # ранний выход ДО чтения context["run_id"]: прямой вызов
-        sid = safe_id(context["run_id"])   # из теста без контекста иначе даст KeyError
+        sid = sanitize_id(context["run_id"])   # из теста без контекста иначе даст KeyError
         return [
             {"src": it["path"], "dst": f"{GCS_PREFIX}/{cabinet_id}/{sid}/{it['date']}.json"}
             for it in items
@@ -190,7 +185,7 @@ def cian_to_bq_and_s3_multi_account():
         items = list(items or [])   # строим из items, а не из dates — иначе load_bq
         if not items:               # пошёл бы за GCS-объектом, которого нет за пустой день
             return []               # ранний выход ДО чтения context["run_id"]
-        sid = safe_id(context["run_id"])
+        sid = sanitize_id(context["run_id"])
         return [
             {
                 "source_objects":                    [f"{GCS_PREFIX}/{cabinet_id}/{sid}/{it['date']}.json"],
@@ -223,7 +218,7 @@ def cian_to_bq_and_s3_multi_account():
     def cleanup(items: list[dict] | None, cabinet_id: str, **context) -> None:
         if not items:
             return
-        sid = safe_id(context["run_id"])
+        sid = sanitize_id(context["run_id"])
         run_dir = os.path.join(BASE_DIR, cabinet_id, sid)
         if not os.path.isdir(run_dir):
             return

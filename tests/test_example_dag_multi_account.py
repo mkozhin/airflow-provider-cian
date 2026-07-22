@@ -161,7 +161,7 @@ class TestMultiAccountAggregatorsWithData:
         assert len(params) == 2
         assert params[0]["src"] == "/tmp/cian/aa/run1/2024-01-01.json"
         assert "/aa/" in params[0]["dst"]
-        # safe_id(run_id) must survive interpolation into the GCS object path.
+        # sanitize_id(run_id) must survive interpolation into the GCS object path.
         assert "/run1/" in params[0]["dst"]
         assert params[0]["dst"].endswith("2024-01-01.json")
         assert params[1]["dst"].endswith("2024-01-02.json")
@@ -189,6 +189,18 @@ class TestMultiAccountAggregatorsWithData:
         assert "/aa/" in params[0]["source_objects"][0]
         assert params[0]["source_objects"][0].endswith("2024-01-01.json")
         assert params[1]["destination_project_dataset_table"].endswith("$20240102")
+
+    def test_make_gcs_params_sanitizes_run_id(self):
+        """A run_id with a special char is canonicalized via sanitize_id.
+
+        Proves the example applies the same sanitization as the operator without
+        mocking internals: "run.1" must appear as the segment "run_1" in the path.
+        """
+        mod = _import_dag_module([Account(id="aa")])
+        make_gcs_params = _get_cabinet_callable(mod, "aa", "make_gcs_params")
+        params = make_gcs_params(self.ITEMS, cabinet_id="aa", run_id="run.1")
+        assert "/run_1/" in params[0]["dst"]
+        assert "/run.1/" not in params[0]["dst"]
 
 
 class TestMultiAccountCleanup:
