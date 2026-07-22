@@ -467,6 +467,63 @@ class TestValidation:
             )
 
 
+class TestDateValidation:
+    """execute() rejects any `date` that is not a zero-padded, calendar-valid ISO date.
+
+    `date` is a template field that lands verbatim in the output filename and BQ/S3
+    partition paths; it is the only unsanitized path component, so a bad value must
+    fail fast — before a hook is built and before the connection is read.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_date",
+        [
+            "../../evil",
+            "2024/01/15",
+            "2024-1-5",
+            "not-a-date",
+            "",
+            "2026-13-45",
+            "2024-02-30",
+            "２０２６-０７-２１",  # full-width (Unicode) digits
+            None,
+        ],
+    )
+    def test_execute_with_invalid_date_raises(self, tmp_path, bad_date):
+        op = CianBuilderReportsOperator(
+            task_id="test_collect",
+            cian_conn_id="cian_test",
+            date=bad_date,
+            base_dir=str(tmp_path),
+            output_format="json",
+        )
+
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook") as MockHook, \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection") as mock_get_conn:
+            with pytest.raises(AirflowException, match="date must be") as exc_info:
+                op.execute(_make_context("run-1"))
+
+        # The offending value/type is echoed back in the message.
+        assert repr(bad_date) in str(exc_info.value)
+
+        # Validation runs BEFORE any hook is built AND before the connection is
+        # read (resolve_cabinet_id only reads the connection in single-account
+        # mode, i.e. account_id=None — which is the mode under test here).
+        MockHook.assert_not_called()
+        mock_get_conn.assert_not_called()
+
+    def test_execute_with_valid_date_passes(self, tmp_path):
+        """A well-formed date runs through as before (regression guard)."""
+        op = _make_operator(str(tmp_path))  # date="2024-01-15"
+        hook = _make_hook_mock(_sample_records(), {10: "ЖК Тест"})
+        with patch("airflow_provider_cian.operators.builder_reports.CianHook", return_value=hook), \
+             patch("airflow_provider_cian.accounts.BaseHook.get_connection",
+                   return_value=_make_conn_mock(login="msk")):
+            result = op.execute(_make_context("run-1"))
+        assert result["date"] == "2024-01-15"
+        assert os.path.exists(result["path"])
+
+
 class TestBuildPathWithCabinetId:
     def test_with_cabinet_id_includes_cabinet_in_path(self, tmp_path):
         op = _make_operator(str(tmp_path))

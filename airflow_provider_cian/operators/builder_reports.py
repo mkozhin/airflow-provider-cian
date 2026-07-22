@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 from datetime import datetime as _datetime, timedelta, timezone
 
 from airflow.exceptions import AirflowException
@@ -74,6 +75,26 @@ class CianBuilderReportsOperator(BaseOperator):
         for ``None``, the day drops out of downstream mapped-task expansion
         entirely (nothing is uploaded).
         """
+        # Validate `date` FIRST — it is a template field that lands verbatim in the
+        # output filename (`_build_path`), BQ partition names ($YYYYMMDD) and S3
+        # _year=/_month=/_day= paths, so it is contractually required to be a
+        # zero-padded ISO date. This is also the only unsanitized path component
+        # (run_id/cabinet_id are sanitized), so the shape check closes path
+        # traversal via `date` too. ASCII [0-9] (not \d, which is Unicode-aware
+        # and would accept full-width digits); isinstance guards non-str/None;
+        # strptime rejects calendar-impossible dates (2026-13-45, 2024-02-30).
+        if not (isinstance(self.date, str)
+                and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", self.date)):
+            raise AirflowException(
+                f"date must be an ISO date string (YYYY-MM-DD), got {self.date!r}"
+            )
+        try:
+            _datetime.strptime(self.date, "%Y-%m-%d")
+        except ValueError as e:
+            raise AirflowException(
+                f"date must be a valid calendar date (YYYY-MM-DD), got {self.date!r}"
+            ) from e
+
         snapshot_ts = (
             context["dag_run"].start_date.strftime("%Y-%m-%dT%H:%M:%S")
             if self.add_snapshot_ts and self.output_format == "json" else None
