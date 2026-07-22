@@ -69,7 +69,7 @@ pip install airflow-provider-cian
 | Параметр | Тип | По умолчанию | Описание |
 |---|---|---|---|
 | `cian_conn_id` | str | `cian_default` | ID подключения Airflow |
-| `date` | str | обязательный | Дата сбора, `YYYY-MM-DD`. Поддерживает шаблон `{{ ds }}` |
+| `date` | str | обязательный | Дата сбора, `YYYY-MM-DD`. Поддерживает шаблон `{{ ds }}`. Проверяется во время выполнения — значение не в формате `YYYY-MM-DD` или календарно-невозможное приводит к `AirflowException` до запроса к API |
 | `base_dir` | str | `/tmp/cian` | Базовая директория для файлов |
 | `output_format` | str | `json` | `json` (JSONL) или `csv` |
 | `account_id` | str \| None | `None` | ID кабинета для мульти-аккаунт режима (совпадает с `id` в Extra JSON). Также записывается (санитизированным) в поле `account_id` каждой записи выгрузки |

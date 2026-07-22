@@ -70,7 +70,7 @@ The token source is controlled **solely by `account_id`** on the operator — no
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `cian_conn_id` | str | `cian_default` | Airflow connection ID |
-| `date` | str | required | Collection date, `YYYY-MM-DD`. Supports `{{ ds }}` template |
+| `date` | str | required | Collection date, `YYYY-MM-DD`. Supports `{{ ds }}` template. Validated at run time — a non-`YYYY-MM-DD` or calendar-invalid value raises `AirflowException` before any API call |
 | `base_dir` | str | `/tmp/cian` | Base directory for output files |
 | `output_format` | str | `json` | `json` (JSONL) or `csv` |
 | `account_id` | str \| None | `None` | Cabinet ID for multi-account mode (matches `id` in Extra JSON). Also written (sanitized) into the `account_id` field of every output record |
