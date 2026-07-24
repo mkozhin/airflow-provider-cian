@@ -15,6 +15,17 @@ from airflow_provider_cian.hooks.cian import CianHook
 _MSK = timezone(timedelta(hours=3))
 _OUTPUT_FORMATS = ("json", "csv")
 
+# Cian sends sub-second digits at an unstable precision, which fromisoformat()
+# rejects before Python 3.11 — that killed a prod task, and nothing downstream reads
+# the fraction, so it is dropped. Bounded on both sides (leading date + HH:MM:SS
+# before it, an offset sign or end of string after it) so nothing else is rewritten
+# and a malformed value is never patched into a valid one; [.,] are both ISO-8601
+# fraction separators, [T ] both date/time separators; [0-9], not Unicode-aware \d.
+# See ADR-0005.
+_FRACTIONAL_SECONDS_RE = re.compile(
+    r"(?<=^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2})[.,][0-9]+(?=[+-]|$)"
+)
+
 _CSV_FIELDS = [
     "id",
     "account_id",
@@ -39,6 +50,38 @@ _CSV_FIELDS = [
 # _CSV_FIELDS is the canonical base set for Builder Report (CSV uses exactly these 19 fields).
 # _SNAPSHOT_FIELD is the only optional extension — JSON-only output (see ADR-0001).
 _SNAPSHOT_FIELD = "snapshot_ts"
+
+
+def _parse_event_datetime(raw_dt, record_id) -> str:
+    """Turn a raw Cian ``date`` value into the documented MSK second-precision string.
+
+    Every failure mode of the field (missing, non-string, unparsable) raises
+    ``AirflowException`` naming the record ``id``; see ADR-0005.
+    """
+    if raw_dt is None:
+        raise AirflowException(
+            f"Record id={record_id} is missing required field 'date'"
+        )
+    if not isinstance(raw_dt, str):
+        raise AirflowException(
+            f"Record id={record_id} has a non-string 'date': {raw_dt!r}"
+        )
+
+    normalized_dt = _FRACTIONAL_SECONDS_RE.sub("", raw_dt.replace("Z", "+00:00"))
+    try:
+        dt = _datetime.fromisoformat(normalized_dt)
+    except ValueError as e:
+        # Quote raw_dt: the string reaching the parser was already rewritten
+        # ("Z" -> "+00:00", fraction dropped), and it was the verbatim value that
+        # let the prod incident be root-caused from the log alone.
+        raise AirflowException(
+            f"Record id={record_id} has an unparsable 'date': {raw_dt!r}"
+        ) from e
+
+    dt = dt.replace(tzinfo=_MSK) if dt.tzinfo is None else dt.astimezone(_MSK)
+    # microsecond=0 makes the documented output structural: the regex covers only
+    # the extended format, while 3.11+ parses shapes that would leak a fraction.
+    return dt.replace(microsecond=0).isoformat()
 
 
 class CianBuilderReportsOperator(BaseOperator):
@@ -148,21 +191,13 @@ class CianBuilderReportsOperator(BaseOperator):
 
         result = []
         for record in records:
+            record_id = record.get("id")
             nid = record.get("newbuildingId")
             billing_price = record.get("billingPrice", 0) or 0
-
-            raw_dt = record.get("date")
-            if raw_dt is None:
-                raise AirflowException(f"Record id={record.get('id')} is missing required field 'date'")
-            dt = _datetime.fromisoformat(raw_dt.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=_MSK)
-            else:
-                dt = dt.astimezone(_MSK)
-            dt_str = dt.isoformat()
+            dt_str = _parse_event_datetime(record.get("date"), record_id)
 
             row = {
-                "id": record.get("id"),
+                "id": record_id,
                 "account_id": account_id,
                 "newbuilding_id": nid,
                 "newbuilding_name": name_cache.get(nid, ""),

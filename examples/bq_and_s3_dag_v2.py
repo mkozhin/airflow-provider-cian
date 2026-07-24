@@ -55,6 +55,10 @@ S3_PREFIX    = "raw/placements/price/cian/new"
 POOL         = "cian_pool"
 
 # ── BQ schema (19 полей) ──────────────────────────────────────────────────────
+# datetime — STRING: ISO 8601 с московским офсетом (YYYY-MM-DDTHH:MM:SS+03:00).
+# В запросах при необходимости приводить явно; формат — с толерантностью к долям
+# секунды, они могли попасть в исторические строки до версии 0.5.1:
+# SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%Ez', datetime)
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},

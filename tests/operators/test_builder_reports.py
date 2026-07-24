@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import sys
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +12,11 @@ from airflow.exceptions import AirflowException
 from airflow.models import Connection
 
 from airflow_provider_cian.accounts import Account
-from airflow_provider_cian.operators.builder_reports import CianBuilderReportsOperator, _CSV_FIELDS, _SNAPSHOT_FIELD
+from airflow_provider_cian.operators.builder_reports import (
+    CianBuilderReportsOperator,
+    _CSV_FIELDS,
+    _SNAPSHOT_FIELD,
+)
 
 
 def _make_operator(
@@ -185,11 +190,126 @@ class TestEnrich:
         assert enriched[0]["datetime"] == "2024-01-16T02:30:00+03:00"
         assert enriched[0]["date"] == "2024-01-15"
 
+    @pytest.mark.parametrize(
+        "raw_date,expected",
+        [
+            # 1..7 fraction digits — fromisoformat() before 3.11 accepts only 3 or 6
+            ("2026-06-03T10:43:22.1+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.12+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.123+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.1234+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.12345+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.123456+03:00", "2026-06-03T10:43:22+03:00"),
+            ("2026-06-03T10:43:22.1234567+03:00", "2026-06-03T10:43:22+03:00"),
+            # the exact value that killed a prod task: DAG `osnova_cian`, run
+            # `scheduled__2026-07-23T02:20:00+00:00`, task `cabinet_100986436.collect`
+            ("2026-07-23T18:14:20.86363+03:00", "2026-07-23T18:14:20+03:00"),
+            # "," is the other ISO-8601 fraction separator (3.10 rejects it as well)
+            ("2026-06-03T10:43:22,86363+03:00", "2026-06-03T10:43:22+03:00"),
+            # truncated, never rounded up — not even across a day boundary
+            ("2026-06-03T10:43:20.9+03:00", "2026-06-03T10:43:20+03:00"),
+            ("2026-06-03T23:59:59.9+03:00", "2026-06-03T23:59:59+03:00"),
+            # a space date/time separator (fromisoformat allows any single one)
+            ("2026-06-03 10:43:22.5+03:00", "2026-06-03T10:43:22+03:00"),
+            # Z is replaced with +00:00 first, so the fraction is still stripped
+            ("2026-06-03T00:30:00.12345Z", "2026-06-03T03:30:00+03:00"),
+            # right-hand boundary of the fraction: a negative offset, and none at all
+            ("2026-06-03T10:43:22.5-05:00", "2026-06-03T18:43:22+03:00"),
+            ("2026-06-03T10:43:22.5", "2026-06-03T10:43:22+03:00"),
+        ],
+    )
+    def test_datetime_fraction_is_dropped(self, tmp_path, raw_date, expected):
+        """Any fraction, any precision, any separator → seconds precision.
+
+        Before the fix the symptom was version dependent: 3.10 raised, 3.11+ let
+        the fraction through (prod incident, see ADR-0005).
+        """
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": raw_date}]
+        hook = _make_hook_mock([])
+        enriched = op._enrich(records, hook, "msk")
+        assert enriched[0]["datetime"] == expected
+        assert "." not in enriched[0]["datetime"]
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "23.07.2026",  # nothing normalisation touches
+            # normalisation DOES rewrite these before parsing (Z -> +00:00, fraction
+            # dropped), so only re-raising with raw_dt keeps the message verbatim
+            "2026-07-23T18:14:20.86363+03:00Z",
+            "2026-07-23T18:14:20.86363+03:00 ",
+            "2026-07-23T18:14:20.86363Z+03:00",
+            # two fractions: stripping the first one would leave a well-formed
+            # "…20.999+03:00", i.e. repair broken data — the fraction is bounded
+            # on the right (offset sign or end of string) so this still fails
+            "2026-07-23T18:14:20.12345.999+03:00",
+        ],
+    )
+    def test_unparsable_date_error_quotes_the_raw_value(self, tmp_path, raw):
+        """The failure echoes exactly what Cian sent, not the rewritten string.
+
+        Root-causing the prod incident relied on the log showing the verbatim
+        value — that is how the 5-digit fraction was spotted (see ADR-0005).
+        """
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0, "date": raw}]
+        hook = _make_hook_mock([])
+        with pytest.raises(AirflowException) as excinfo:
+            op._enrich(records, hook, "msk")
+        assert repr(raw) in str(excinfo.value)
+        assert "id=7" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "raw_date,expected_on_311",
+        [
+            # dot after the offset — read as a fractional UTC offset on 3.11+
+            ("2026-07-23T18:14:20+03:00.5", "2026-07-23T18:14:19+03:00"),
+            ("2026-07-23T18:14:20+03:00:00.5", "2026-07-23T18:14:19+03:00"),
+            # ISO basic format (no colons) — only 3.11+ parses it at all
+            ("20260723T181420.86363+0300", "2026-07-23T18:14:20+03:00"),
+        ],
+    )
+    def test_datetime_with_offset_fraction_or_basic_format(
+        self, tmp_path, raw_date, expected_on_311
+    ):
+        """Untouched by normalisation: rejected outright on < 3.11, seconds on 3.11+.
+
+        Neither branch may silently repair the value ("…20+03:00.5" must not
+        become "…20+03:00") or leak a fraction into the output (see ADR-0005).
+        """
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 1, "newbuildingId": 10, "billingPrice": 0, "date": raw_date}]
+        hook = _make_hook_mock([])
+        if sys.version_info < (3, 11):
+            with pytest.raises(AirflowException, match="unparsable 'date'"):
+                op._enrich(records, hook, "msk")
+        else:
+            enriched = op._enrich(records, hook, "msk")
+            assert enriched[0]["datetime"] == expected_on_311
+            assert "." not in enriched[0]["datetime"]
+
     def test_missing_date_field_raises_airflow_exception(self, tmp_path):
         op = _make_operator(str(tmp_path))
         records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0}]  # no "date" key
         hook = _make_hook_mock([])
-        with pytest.raises(AirflowException, match="id=7"):
+        with pytest.raises(AirflowException, match="id=7 is missing required field 'date'"):
+            op._enrich(records, hook, "msk")
+
+    def test_non_string_date_raises_airflow_exception(self, tmp_path):
+        """A non-string `date` (e.g. an epoch number) fails like the missing-field case."""
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0, "date": 1769184860}]
+        hook = _make_hook_mock([])
+        with pytest.raises(AirflowException, match="id=7 has a non-string 'date'"):
+            op._enrich(records, hook, "msk")
+
+    def test_empty_date_string_raises_airflow_exception(self, tmp_path):
+        """An empty string is malformed data, not a missing field — it fails loudly."""
+        op = _make_operator(str(tmp_path))
+        records = [{"id": 7, "newbuildingId": 10, "billingPrice": 0, "date": ""}]
+        hook = _make_hook_mock([])
+        with pytest.raises(AirflowException, match="unparsable 'date'"):
             op._enrich(records, hook, "msk")
 
     def test_enriched_record_has_exactly_csv_fields(self, tmp_path):
@@ -377,6 +497,26 @@ class TestExecute:
         assert first["date"] == "2024-01-15"
         assert first["newbuilding_name"] == "ЖК Тест"
         assert first["is_targeted"] is True
+
+    def test_json_output_file_has_no_sub_second_fraction(self, tmp_path):
+        """The truncation survives to the written file, not just to _enrich's return value."""
+        records = _sample_records()
+        records[0]["date"] = "2024-01-15T10:43:22.86363+03:00"
+        path, _ = self._run_operator(tmp_path, records=records)
+        with open(path, encoding="utf-8") as f:
+            written = [json.loads(line) for line in f if line.strip()]
+        assert written[0]["datetime"] == "2024-01-15T10:43:22+03:00"
+        assert "." not in written[0]["datetime"]
+
+    def test_csv_output_file_has_no_sub_second_fraction(self, tmp_path):
+        """The truncation survives to the written file, not just to _enrich's return value."""
+        records = _sample_records()
+        records[0]["date"] = "2024-01-15T10:43:22.86363+03:00"
+        path, _ = self._run_operator(tmp_path, output_format="csv", records=records)
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["datetime"] == "2024-01-15T10:43:22+03:00"
+        assert "." not in rows[0]["datetime"]
 
     def test_custom_base_dir(self, tmp_path):
         custom_dir = str(tmp_path / "custom")

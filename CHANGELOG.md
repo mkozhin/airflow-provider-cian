@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1] - 2026-07-24
+
+- Fixed: the task no longer fails with `ValueError: Invalid isoformat string` on records whose timestamp carries an unusual number of sub-second digits (the production case had 5: `2026-07-23T18:14:20.86363+03:00`). The cause is `datetime.fromisoformat()` in CPython before 3.11, which accepts a fractional part of **only** 3 or 6 digits — any other precision raises; the Airflow worker runs Python 3.10, and the provider still supports `>=3.10`
+- Changed: sub-second digits in the `datetime` field are dropped by truncation (not rounding) before parsing, so the value is always `YYYY-MM-DDTHH:MM:SS+03:00` — exactly the format already documented in the READMEs. Records with 3- or 6-digit fractions, which used to parse successfully and reach the output with sub-second precision, are now truncated as well. The schema, the field order and the CSV layout are unchanged; in BigQuery `datetime` is a `STRING`, so no reload of historical partitions is required. Second precision is enforced on the parsed value itself (`microsecond=0`), not only on the shape of the incoming string, so it holds on every supported interpreter (3.11+ accepts ISO forms 3.10 does not). See `docs/adr/0005-datetime-drop-subsecond.md`
+- Changed: a record whose `date` field is present but not a string (e.g. an epoch number) now raises `AirflowException` naming the record `id`, like the missing-`date` case, instead of a bare `AttributeError`
+- Changed: a `date` string the stdlib cannot parse now raises `AirflowException: Record id=<id> has an unparsable 'date': '<value>'` (chained from the original `ValueError`) instead of the raw `ValueError`. The quoted value is the one the API sent, before normalisation. Previously the `ValueError` quoted the string after the `Z` → `+00:00` substitution — close enough to the input that the incident's `.86363` was still readable in the traceback — but 0.5.1 also strips the sub-second digits before parsing, so an unwrapped `ValueError` would from now on hide the very precision that root-caused the incident
+
 ## [0.5.0] - 2026-07-22
 
 - **BREAKING**: every output record (JSON and CSV) now carries a new `account_id` field, inserted as the second field right after `id`. The base schema grows from 18 to 19 fields (`snapshot_ts` becomes the 20th field in JSON when `add_snapshot_ts=True`). The value is the sanitized Account ID of the cabinet — the same value used in the file path — so records from different cabinets can be told apart in the data itself, not only from the file path
