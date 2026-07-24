@@ -1,5 +1,5 @@
 .idea
-.venv
+.venv*
 uv.lock
 .ipynb_checkpoints
 __pycache__
@@ -12,6 +12,7 @@ __pycache__
 dist/
 build/
 *.egg-info/
+.pytest_cache/
 
 # Generated version file (setuptools-scm)
 airflow_provider_cian/_version.py
