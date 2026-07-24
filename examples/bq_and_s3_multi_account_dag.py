@@ -84,6 +84,10 @@ POOL             = "cian_pool"
 MAX_ACTIVE_TASKS = 5
 
 # ── BQ schema (20 полей, включая snapshot_ts) ────────────────────────────────
+# datetime — STRING: ISO 8601 с московским офсетом (YYYY-MM-DDTHH:MM:SS+03:00).
+# В запросах при необходимости приводить явно; формат — с толерантностью к долям
+# секунды, они могли попасть в исторические строки до версии 0.5.1:
+# SAFE.PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%E*S%Ez', datetime)
 
 BQ_SCHEMA = [
     {"name": "id",                    "type": "STRING",    "mode": "NULLABLE"},

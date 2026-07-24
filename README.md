@@ -115,7 +115,7 @@ Base schema (19 fields) — present in all records regardless of format:
 
 - `account_id` — the sanitized Account ID of the cabinet this record belongs to (second field, right after `id`); same value as the file-path segment. Lets you tell records from different cabinets apart in the data itself, not only from the file path
 - `date` — collection date (`YYYY-MM-DD`), always equals the operator's `date` parameter; safe for BigQuery date partitioning
-- `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`)
+- `datetime` — original API datetime with explicit Moscow offset (`YYYY-MM-DDTHH:MM:SS+03:00`); sub-second digits returned by the API are dropped (truncated, not rounded), so the value always has second precision
 - `is_targeted` is computed: `billing_price > 0`.
 
 When `add_snapshot_ts=True` and `output_format='json'`, each record also contains a 20th field:
@@ -260,6 +260,8 @@ Then pass `pool="cian_api"` to `CianBuilderReportsOperator.partial(...)`.
 ```python
 from airflow_provider_cian.hooks import CianNotFoundError
 ```
+
+A record whose `date` field is missing or is not a string fails the task with `AirflowException` naming the record `id`. A `date` string the stdlib cannot parse fails the same way — `AirflowException: Record id=<id> has an unparsable 'date': '<value>'` — where `<value>` is quoted exactly as the API sent it, before any normalisation (`Z` → `+00:00`, sub-second digits dropped). That keeps the failing precision or format readable straight from the log, and an unreadable timestamp surfaces loudly instead of being silently "repaired" (see `docs/adr/0005-datetime-drop-subsecond.md`).
 
 ## Retry Behaviour
 
