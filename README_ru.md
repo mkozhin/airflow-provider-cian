@@ -6,7 +6,7 @@
 
 ---
 
-Airflow-провайдер для Cian.ru Builder API — сбор статистики звонков и чатов.
+Airflow-провайдер для [Cian.ru Builder API](https://public-api.cian.ru/builders/docs/latest) — сбор статистики звонков и чатов.
 
 ## Установка
 

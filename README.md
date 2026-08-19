@@ -6,7 +6,7 @@
 
 ---
 
-Airflow provider for Cian.ru Builder API — collect calls and chats statistics.
+Airflow provider for [Cian.ru Builder API](https://public-api.cian.ru/builders/docs/latest) — collect calls and chats statistics.
 
 ## Installation
 
